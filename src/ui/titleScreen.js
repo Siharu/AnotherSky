@@ -110,11 +110,28 @@ function isMainMenuIdleEligible(){
   }
 }
 export function tickMenuIdle(){
-  if(!isMainMenuIdleEligible()){ menuIdleSince = null; return; }
-  if(menuIdleSince === null){ menuIdleSince = performance.now(); return; } // first eligible frame - start the clock now, not from page load
-  if(performance.now() - menuIdleSince >= MENU_IDLE_BREAKDOWN*1000){
-    menuIdleSince = null;
-    triggerMenuBreakdown();
+  // HOTFIX #4: HOTFIX #3 wrapped isMainMenuIdleEligible()'s own body in
+  // try/catch, but tickMenuIdle() reads/writes menuIdleSince (also
+  // module-scope, also exposed to the same load-order race, see file
+  // header + HOTFIX #3 comment above) directly, outside that try/catch -
+  // so the exact same TDZ crash just resurfaced one binding over,
+  // `Cannot access 'menuIdleSince' before initialization`, same call
+  // path. Patching each module-scope binding this function touches one
+  // at a time is a losing game - anything read in this call path is
+  // exposed to the same race. Wrapping the whole per-frame entry point
+  // (the only thing animate() actually calls into here) is the fix that
+  // covers all of them, present and future, at once: any TDZ read
+  // anywhere below just skips this one frame instead of taking down the
+  // render loop.
+  try {
+    if(!isMainMenuIdleEligible()){ menuIdleSince = null; return; }
+    if(menuIdleSince === null){ menuIdleSince = performance.now(); return; } // first eligible frame - start the clock now, not from page load
+    if(performance.now() - menuIdleSince >= MENU_IDLE_BREAKDOWN*1000){
+      menuIdleSince = null;
+      triggerMenuBreakdown();
+    }
+  } catch (e) {
+    // fail soft - see comment above
   }
 }
 function triggerMenuBreakdown(){
