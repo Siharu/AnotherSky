@@ -80,9 +80,14 @@ const MENU_IDLE_BREAKDOWN = 60; // seconds of no input before it fires
 let menuIdleSince = null, menuBreakdownActive = false;
 function resetMenuIdle(){ menuIdleSince = performance.now(); }
 ['pointerdown','pointermove','keydown','wheel','touchstart'].forEach(evt=>{
-  titleScreen.addEventListener(evt, resetMenuIdle, { passive:true });
+  if(titleScreen) titleScreen.addEventListener(evt, resetMenuIdle, { passive:true });
 });
 function isMainMenuIdleEligible(){
+  // Defensive - see docs/HANDOFF.md HOTFIX #2. In normal browser load
+  // order this is always non-null by the time animate() calls into this
+  // (deferred module scripts run after DOM parsing), but fail soft
+  // instead of throwing if that guarantee is ever violated.
+  if(!titleScreen) return false;
   // only while the actual button menu is up - not mid-synopsis/setup, and
   // not after the title screen has already started fading for gameplay
   return titleScreen.classList.contains('show-menu')

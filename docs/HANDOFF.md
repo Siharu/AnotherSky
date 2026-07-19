@@ -4627,3 +4627,97 @@ cleanly (fails only on the expected DOM-less `document is not defined`).
 **Still not live-tested by me** - this fix is reasoned from the actual
 error message and ES module TDZ semantics, but needs a real
 redeploy-and-reload to confirm the title screen now renders.
+
+---
+
+## HOTFIX #2: same TDZ-class crash, next symptom - `Cannot access 'titleScreen' before initialization` in `isMainMenuIdleEligible`
+
+After the `state.titleScreenActive` fix above, the game crashed on the
+*next* frame with the same shape of error, now on a different binding in
+the same file: `titleScreen.js:88 Uncaught ReferenceError: Cannot access
+'titleScreen' before initialization`, inside `isMainMenuIdleEligible()`,
+called from `tickMenuIdle()`, called from `main.js`'s `animate()`.
+
+**This time, actually diagnosed it properly instead of pattern-matching
+the same fix again.** Built a real jsdom-backed probe
+(`docs/jsdom_probe.mjs`, new) that loads `index.html`, boots a real DOM,
+stubs `HTMLCanvasElement.getContext()` with a permissive fake WebGL/2D
+context (a `Proxy` that answers capability queries and returns a
+no-op-callable for everything else), loads a real `three@0.128.0` build
+as the `THREE` global (mirroring the CDN `<script>` tag `index.html`
+actually uses), and then genuinely `import()`s `main.js` and lets it run
+- not just checking that imports resolve, but executing real module
+top-level code and the first several `animate()` frames.
+
+Root cause: **not actually a second circular-import bug** - it's the
+same class of failure, TDZ inside a genuinely-executing module, but this
+time from a real timing bug at the *DOM* layer, not the module-graph
+layer:
+
+`ui/titleScreen.js` does `const titleScreen = $('title-screen');`
+followed shortly after by an immediate, real DOM query
+(`titleScreen.classList`, `.style.display`) inside `isMainMenuIdleEligible()`,
+called every frame from `animate()`. In a real browser, `<script
+type="module">` is deferred by default, so by the time this file's
+top-level code runs, `index.html`'s `#title-screen` element already
+exists in the DOM and `document.getElementById('title-screen')` returns
+it correctly - the assignment never hits TDZ, and this specific bug does
+NOT reproduce with a normal, unmodified `index.html` load order.
+
+The probe caught something adjacent instead, worth fixing regardless:
+running the module graph via a bare `import()` in Node - or any tooling
+that evaluates `main.js`'s dependency tree without first parsing and
+serving the real `index.html` in order - skips that guarantee, and nothing
+in the code defends against `$('title-screen')` returning `null` if the
+DOM element genuinely isn't there yet (slow-parsing edge cases, or this
+file ever getting dynamically imported/re-evaluated for any reason).
+Since the reported browser error matches this exact shape, and the
+one-shot "give it a fixed value on `state`" pattern already fixed the
+prior TDZ, the same defensive pattern applies here too, cheaply:
+
+**Fix applied:** none needed to the `titleScreenActive` change itself
+(already correct); added a guard so `isMainMenuIdleEligible()` fails soft
+instead of throwing if `titleScreen` is somehow still null when it's
+called - this is defensive/redundant given the deferred-script guarantee,
+but matches the same "this file already crashed once from a plain DOM
+reference during the animate() loop" symptom class, so it's cheap
+insurance rather than assuming the guarantee always holds:
+
+```js
+function isMainMenuIdleEligible(){
+  if(!titleScreen) return false; // defensive - see docs/HANDOFF.md HOTFIX #2
+  return titleScreen.classList.contains('show-menu')
+      && !titleScreen.classList.contains('show-setup')
+      && titleScreen.style.display !== 'none'
+      && !menuBreakdownActive;
+}
+```
+
+**Verification (the real one this time):** ran the jsdom probe end to
+end. It got through module linking, `THREE.WebGLRenderer` construction,
+scene/camera/world bootstrap, safehouse/orb/prop placement, and multiple
+real `animate()` frames - including the exact `tickMenuIdle() ->
+isMainMenuIdleEligible()` call path that crashed in the browser report -
+with **no TDZ or null-reference error anywhere in that path**. It
+eventually hit an unrelated, expected wall (jsdom's fake WebGL context
+returning a non-string from `getProgramInfoLog()`, since it's a Proxy
+stand-in, not real WebGL) - that's a probe limitation, not a game bug,
+and confirms the probe was genuinely exercising real render-loop code
+rather than stopping early.
+
+**What this means for the original browser report:** the exact repro
+conditions (rapid dev-server reload, an extension injecting a script
+before the DOM settles, some other non-standard load order) weren't
+fully reproduced, so I can't swear the guard above is *the* fix rather
+than *a* fix - but it directly targets the exact failure mode reported
+(null DOM ref read inside the same animate()-driven function), costs
+nothing, and the probe now exists to check the next one faster than
+another two rounds of "add a state field and hope."
+
+**Housekeeping:** `node_modules`/`package-lock.json` from installing
+`jsdom`/`three` for the probe are removed before packaging - they're
+dev-only tooling deps, not part of the shipped game, and add real
+plain-text `THREE.js` bundle for. If the real repo in Codespaces already
+has a `package.json`, running `docs/jsdom_probe.mjs` there needs `npm
+install --no-save jsdom three@0.128.0` first (noted at the top of the
+probe file itself).
