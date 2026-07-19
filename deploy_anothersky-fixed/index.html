@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script>
+/* ---------- ON-SCREEN DEBUG OVERLAY ----------
+   Runs as an inline, non-module script as the very first thing in <head>,
+   before src/main.js (a module script, deferred by default) even starts
+   loading - so this is active early enough to catch an error thrown
+   during module init itself, which is the worst class of bug in this
+   codebase: a throw partway through main.js's top-level evaluation
+   silently kills every addEventListener/setup call after it, with zero
+   feedback (see the gameHasBegun/pause-menu bug from earlier this
+   project - a live example of exactly this failure shape).
+
+   Built specifically because devtools aren't available on mobile, so
+   "check the console" isn't an option there. This surfaces the same
+   information - exact error text, file/line, a running log - as a
+   small on-screen badge that's invisible until something actually goes
+   wrong, on any device.
+
+   Deliberately vanilla JS, zero dependencies, defined before anything
+   else so it can never itself be the thing that fails to load. */
+(function(){
+  var log = [];
+  var MAX = 40;
+  function push(kind, text){
+    log.push({ kind: kind, text: String(text), t: new Date().toLocaleTimeString() });
+    if(log.length > MAX) log.shift();
+    render();
+  }
+  window.addEventListener('error', function(e){
+    var loc = e.filename ? (e.filename.split('/').pop() + ':' + e.lineno) : '';
+    push('error', (e.message || 'Unknown error') + (loc ? '  [' + loc + ']' : ''));
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    var reason = e.reason && e.reason.message ? e.reason.message : e.reason;
+    push('error', 'Unhandled promise rejection: ' + reason);
+  });
+  var origWarn = console.warn, origError = console.error;
+  console.warn = function(){ origWarn.apply(console, arguments); push('warn', Array.prototype.join.call(arguments, ' ')); };
+  console.error = function(){ origError.apply(console, arguments); push('error', Array.prototype.join.call(arguments, ' ')); };
+
+  var badge, panel, list, built = false;
+  function build(){
+    if(built) return; built = true;
+    badge = document.createElement('div');
+    badge.id = 'debug-badge';
+    badge.textContent = '!';
+    badge.style.cssText = 'position:fixed;bottom:14px;right:14px;z-index:99999;width:34px;height:34px;'
+      +'border-radius:50%;background:#7a1f1f;color:#eee;font:bold 16px monospace;display:none;'
+      +'align-items:center;justify-content:center;cursor:pointer;box-shadow:0 0 8px rgba(0,0,0,0.6);'
+      +'border:1px solid rgba(255,255,255,0.3);';
+    badge.style.display = 'none';
+    panel = document.createElement('div');
+    panel.id = 'debug-panel';
+    panel.style.cssText = 'position:fixed;bottom:56px;right:14px;z-index:99999;width:min(88vw,420px);'
+      +'max-height:50vh;overflow-y:auto;background:rgba(6,5,7,0.96);color:#c9c2b6;'
+      +'font:11px/1.4 monospace;padding:10px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);'
+      +'display:none;white-space:pre-wrap;word-break:break-word;';
+    list = document.createElement('div');
+    panel.appendChild(list);
+    var clearBtn = document.createElement('div');
+    clearBtn.textContent = 'clear';
+    clearBtn.style.cssText = 'margin-top:8px;opacity:0.6;text-decoration:underline;cursor:pointer;';
+    clearBtn.addEventListener('click', function(e){ e.stopPropagation(); log.length = 0; render(); });
+    panel.appendChild(clearBtn);
+    badge.addEventListener('click', function(){
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+    document.body.appendChild(badge);
+    document.body.appendChild(panel);
+  }
+  function render(){
+    if(!document.body){ document.addEventListener('DOMContentLoaded', render, { once:true }); return; }
+    build();
+    badge.style.display = log.length ? 'flex' : 'none';
+    list.innerHTML = '';
+    for(var i=log.length-1;i>=0;i--){
+      var row = document.createElement('div');
+      row.style.cssText = 'margin-bottom:6px;color:' + (log[i].kind==='error' ? '#e08a8a' : '#c9b98a') + ';';
+      row.textContent = '[' + log[i].t + '] ' + log[i].text;
+      list.appendChild(row);
+    }
+  }
+})();
+</script>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>ANOTHER SKY // the fog remembers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,500&family=Special+Elite&family=Permanent+Marker&family=Anton&family=Playfair+Display:ital,wght@0,700;1,700&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#050608;
+    --bone:#c9c2b6;
+    --rust:#7a1f1f;
+    --violet:#4a3a5c;
+    --font-mono:'Space Mono', 'Courier New', Courier, monospace;
+    --font-serif:'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+    --font-type:'Special Elite', 'Courier New', monospace;
+    --font-scrawl:'Permanent Marker', cursive;
+    --font-headline:'Anton', 'Arial Narrow', sans-serif;
+    --font-news:'Playfair Display', Georgia, serif;
+    --font-courier2:'Courier Prime', 'Courier New', monospace;
+    --safe-t:env(safe-area-inset-top,0px);
+    --safe-b:env(safe-area-inset-bottom,0px);
+    --safe-l:env(safe-area-inset-left,0px);
+    --safe-r:env(safe-area-inset-right,0px);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+    background:#000; font-family:var(--font-mono);
+    touch-action:none; overscroll-behavior:none;
+  }
+  .notched{
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  }
+  .notched-sm{
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  }
+  #game-canvas{position:fixed; inset:0; width:100%; height:100%; display:block; transition:filter .4s ease;}
+
+  /* ---------- EYELIDS ----------
+     Covers the rendered scene completely while "closed" so the title screen
+     isn't just a translucent card floating over a fully visible world - the
+     player is meant to be reading this with their eyes shut. Opens via an
+     anime.js-driven slide when "open your eyes" is pressed. */
+  #eyelids{ position:fixed; inset:0; z-index:40; pointer-events:none; }
+
+  /* ---------- AUTOSAVE INDICATOR ----------
+     Small tape-reel readout, top-left, fades in whenever writeSave() fires
+     (periodic 20-minute tick, or an immediate save on lore/radio pickup)
+     and fades back out a couple seconds later. Off-screen/invisible by
+     default so it never competes with the HUD when nothing's saving. */
+  #autosave-indicator{
+    position:fixed; top:14px; left:14px; z-index:45;
+    display:flex; align-items:center; gap:6px;
+    color:#c9c2b6; opacity:0; transform:translateY(-4px);
+    transition:opacity .5s ease, transform .5s ease;
+    pointer-events:none; font-family:'Space Mono',monospace;
+    font-size:10px; letter-spacing:0.15em; text-transform:uppercase;
+  }
+  #autosave-indicator.show{ opacity:0.85; transform:translateY(0); }
+  #autosave-indicator svg{ filter:drop-shadow(0 0 3px rgba(0,0,0,0.6)); }
+  #autosave-indicator .reel{ transform-box:fill-box; transform-origin:center; animation:reel-spin 1.1s linear infinite; }
+  #autosave-indicator.show .reel{ animation-play-state:running; }
+  @keyframes reel-spin{ from{ transform:rotate(0deg); } to{ transform:rotate(360deg); } }
+  #autosave-hint{
+    position:absolute; top:0; left:100%; margin-left:10px;
+    white-space:nowrap; background:rgba(10,8,9,0.85);
+    border:1px solid rgba(201,194,182,0.25); border-radius:2px;
+    padding:5px 9px; font-size:9px; letter-spacing:0.08em; text-transform:none;
+    color:#c9c2b6; opacity:0; transform:translateX(-4px);
+    transition:opacity .5s ease, transform .5s ease;
+  }
+  #autosave-indicator.show-hint #autosave-hint{ opacity:0.9; transform:translateX(0); }
+  .eyelid{ position:absolute; left:0; width:100%; height:52%; background:
+      linear-gradient(to bottom, #030202 0%, #0a0605 70%, #150908 100%); }
+  .eyelid-top{ top:0; box-shadow:0 6px 18px rgba(0,0,0,0.7); }
+  .eyelid-bottom{ bottom:0; box-shadow:0 -6px 18px rgba(0,0,0,0.7); }
+  .eyelid::after{ content:''; position:absolute; left:0; width:100%; height:2px;
+      background:rgba(0,0,0,0.9); }
+  .eyelid-top::after{ bottom:0; }
+  .eyelid-bottom::after{ top:0; }
+
+
+  /* ---------- TITLE ---------- */
+  #title-screen{
+    position:fixed; inset:0; z-index:50;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    color:var(--bone); text-align:center; overflow-y:auto;
+    padding:24px; padding-top:calc(24px + var(--safe-t)); padding-bottom:calc(24px + var(--safe-b));
+    opacity:0; transition:opacity 1.4s ease;
+    /* the 3D scene is already rendering behind this the whole time - let it
+       show through instead of hiding it behind a flat card. darker toward
+       the edges and the bottom (where the menu sits) for legibility,
+       lighter through the middle so the fog/lamps/sky read as a real place. */
+    background:
+      radial-gradient(ellipse at 50% 38%, rgba(5,6,8,0.15) 0%, rgba(5,6,8,0.55) 68%, rgba(5,6,8,0.86) 100%),
+      linear-gradient(to bottom, rgba(5,6,8,0.5) 0%, rgba(5,6,8,0.05) 22%, rgba(5,6,8,0.1) 55%, rgba(5,6,8,0.92) 100%);
+  }
+  #title-screen.ready{ opacity:1; }
+  #title-frame{ position:fixed; inset:14px; border:1px solid rgba(201,194,182,0.14); pointer-events:none; z-index:51; }
+  #title-frame::before, #title-frame::after,
+  #title-frame i::before, #title-frame i::after{ content:''; position:absolute; width:18px; height:18px; }
+  #title-frame::before{ top:-1px; left:-1px; border-top:1px solid rgba(201,194,182,0.55); border-left:1px solid rgba(201,194,182,0.55); }
+  #title-frame::after{ top:-1px; right:-1px; border-top:1px solid rgba(201,194,182,0.55); border-right:1px solid rgba(201,194,182,0.55); }
+  #title-frame i::before{ bottom:-1px; left:-1px; border-bottom:1px solid rgba(201,194,182,0.55); border-left:1px solid rgba(201,194,182,0.55); }
+  #title-frame i::after{ bottom:-1px; right:-1px; border-bottom:1px solid rgba(201,194,182,0.55); border-right:1px solid rgba(201,194,182,0.55); }
+  #title-grain{
+    position:fixed; inset:0; z-index:52; pointer-events:none; opacity:.05; mix-blend-mode:overlay;
+    background-size:140px 140px; animation:grainShift 0.6s steps(4) infinite;
+  }
+  @keyframes grainShift{ 0%{transform:translate(0,0);} 25%{transform:translate(-2%,3%);} 50%{transform:translate(3%,-2%);} 75%{transform:translate(-3%,-3%);} 100%{transform:translate(0,0);} }
+  #title-logo{ position:relative; margin:0; z-index:1; }
+  #title-screen h1{
+    font-family:var(--font-serif); font-weight:400; position:relative;
+    font-size:clamp(2.3rem, 10vw, 3.8rem); letter-spacing:0.32em; margin:0 0 0 2px;
+    color:#e7e0d2; text-shadow:0 0 24px rgba(122,31,31,0.45), 0 0 70px rgba(74,58,92,0.4);
+  }
+  /* chromatic aberration channel split - red/cyan copies of the same text,
+     screen-blended and offset, mostly hidden but punching through during
+     glitch bursts. Separate from the softer ghost-double on #title-logo. */
+  #title-screen h1::before, #title-screen h1::after{
+    content:'ANOTHER SKY'; position:absolute; inset:0; pointer-events:none;
+    font-family:var(--font-serif); font-weight:400; letter-spacing:0.32em;
+    font-size:clamp(2.3rem, 10vw, 3.8rem);
+    mix-blend-mode:screen; opacity:0;
+  }
+  #title-screen h1::before{ color:#ff2b4d; animation:chromaRed 5s infinite; }
+  #title-screen h1::after{ color:#2be0ff; animation:chromaCyan 5s infinite; }
+  @keyframes chromaRed{
+    0%,86%,100%{ opacity:0; transform:translate(0,0); clip-path:inset(0 0 0 0); }
+    87%{ opacity:.85; transform:translate(-3px,0); clip-path:inset(10% 0 60% 0); }
+    88.5%{ opacity:.6; transform:translate(2px,-1px); clip-path:inset(60% 0 5% 0); }
+    90%{ opacity:0; transform:translate(0,0); }
+    91%{ opacity:.75; transform:translate(-4px,1px); clip-path:inset(30% 0 30% 0); }
+    92.5%{ opacity:0; transform:translate(0,0); }
+  }
+  @keyframes chromaCyan{
+    0%,86%,100%{ opacity:0; transform:translate(0,0); clip-path:inset(0 0 0 0); }
+    87%{ opacity:.75; transform:translate(3px,0); clip-path:inset(15% 0 55% 0); }
+    88.5%{ opacity:.55; transform:translate(-2px,1px); clip-path:inset(55% 0 8% 0); }
+    90%{ opacity:0; transform:translate(0,0); }
+    91%{ opacity:.65; transform:translate(4px,-1px); clip-path:inset(25% 0 35% 0); }
+    92.5%{ opacity:0; transform:translate(0,0); }
+  }
+  /* one-shot glitch burst - fired once by JS ~1s after the title appears
+     (before the ambient chromaRed/chromaCyan loops above have even come
+     back around), so the very first thing the player sees is the clean
+     title tearing itself apart for a beat. Independent timeline from the
+     ambient loops (different keyframe names) so they don't fight. */
+  #title-screen.glitch-burst h1{ animation:glitchBurstMain .65s steps(1) 1; }
+  #title-screen.glitch-burst h1::before{ animation:glitchBurstRed .65s steps(1) 1; }
+  #title-screen.glitch-burst h1::after{ animation:glitchBurstCyan .65s steps(1) 1; }
+  @keyframes glitchBurstMain{
+    0%{ transform:translate(0,0) skewX(0); }
+    12%{ transform:translate(-4px,1px) skewX(2deg); }
+    24%{ transform:translate(3px,-2px) skewX(-3deg); }
+    36%{ transform:translate(-2px,0) skewX(1deg); }
+    48%{ transform:translate(2px,1px) skewX(-1deg); }
+    62%{ transform:translate(-1px,-1px) skewX(0); }
+    78%{ transform:translate(1px,0); }
+    100%{ transform:translate(0,0) skewX(0); }
+  }
+  @keyframes glitchBurstRed{
+    0%{ opacity:0; transform:translate(0,0); clip-path:inset(0 0 0 0); }
+    10%{ opacity:.9; transform:translate(-5px,1px); clip-path:inset(8% 0 58% 0); }
+    28%{ opacity:.7; transform:translate(4px,-1px); clip-path:inset(52% 0 6% 0); }
+    46%{ opacity:.85; transform:translate(-4px,2px); clip-path:inset(20% 0 34% 0); }
+    64%{ opacity:.4; transform:translate(3px,0); }
+    100%{ opacity:0; transform:translate(0,0); }
+  }
+  @keyframes glitchBurstCyan{
+    0%{ opacity:0; transform:translate(0,0); clip-path:inset(0 0 0 0); }
+    10%{ opacity:.8; transform:translate(5px,-1px); clip-path:inset(14% 0 50% 0); }
+    28%{ opacity:.65; transform:translate(-4px,1px); clip-path:inset(56% 0 10% 0); }
+    46%{ opacity:.75; transform:translate(4px,-2px); clip-path:inset(26% 0 28% 0); }
+    64%{ opacity:.35; transform:translate(-3px,0); }
+    100%{ opacity:0; transform:translate(0,0); }
+  }
+  #title-logo::before{
+    content:'ANOTHER SKY'; position:absolute; inset:0; color:transparent;
+    font-family:var(--font-serif); font-weight:400;
+    font-size:clamp(2.3rem, 10vw, 3.8rem); letter-spacing:0.32em;
+    -webkit-text-stroke:1px rgba(122,31,31,0.5);
+    animation:titleGhost 6s ease-in-out infinite;
+  }
+  @keyframes titleGhost{
+    0%,84%,100%{ transform:translate(0,0); opacity:0; }
+    85%{ transform:translate(2px,0); opacity:.7; }
+    87%{ transform:translate(-2px,1px); opacity:0; }
+    91%{ transform:translate(1px,-1px); opacity:.5; }
+    93%{ transform:translate(0,0); opacity:0; }
+  }
+  #title-screen .flicker{ animation:flick 5s infinite; }
+  @keyframes flick{ 0%,89%,93%,100%{opacity:1;} 90%,92%{opacity:.35;} }
+  /* ---------- TITLE VOID (black hole behind the logo) ----------
+     Not a mandala - a dull, uneven smear of dark matter with a true-black
+     core. Built from a handful of soft, irregularly-placed, low-saturation
+     smudges (not repeating conic bands, which read as a spinning wagon
+     wheel / rave pinwheel) plus SVG turbulence displacement so the whole
+     shape reads as organic and slightly wrong rather than a perfect disc. */
+  #title-void{
+    position:absolute; top:50%; left:50%; width:min(64vw,420px); height:min(64vw,420px);
+    transform:translate(-50%,-50%); pointer-events:none; z-index:0; opacity:0;
+    transition:opacity 3s ease; border-radius:50%; overflow:hidden;
+    filter:url(#voidWarp);
+  }
+  .void-active #title-void{ opacity:.7; }
+  #title-void .v-layer{ position:absolute; inset:-20%; border-radius:50%; }
+  /* dull uneven corona - a few off-center soft smudges, low saturation,
+     no hard edges, no repeating pattern */
+  #title-void .v-disk{
+    background:
+      radial-gradient(circle at 38% 42%, rgba(70,26,34,0.5) 0%, transparent 38%),
+      radial-gradient(circle at 62% 55%, rgba(40,20,46,0.45) 0%, transparent 42%),
+      radial-gradient(circle at 48% 68%, rgba(58,22,26,0.4) 0%, transparent 36%),
+      radial-gradient(circle at 55% 30%, rgba(30,16,36,0.35) 0%, transparent 40%);
+    filter:blur(6px) saturate(.75);
+    animation:voidSpin 130s linear infinite;
+  }
+  /* second, slower, counter-rotating layer - very faint, just enough to
+     keep the smudges from looking static */
+  #title-void .v-disk2{
+    background:
+      radial-gradient(circle at 45% 50%, rgba(60,24,30,0.3) 0%, transparent 34%),
+      radial-gradient(circle at 58% 45%, rgba(28,14,32,0.28) 0%, transparent 38%);
+    filter:blur(9px);
+    animation:voidSpinRev 190s linear infinite;
+  }
+  /* crush center to true black (event horizon), fade edges into the scene */
+  #title-void .v-mask{
+    background:radial-gradient(circle at 50% 50%,
+      #000 0%, #000 20%, rgba(4,3,5,0.95) 32%, transparent 58%, transparent 100%);
+  }
+  /* faint, uneven rim light right at the horizon - dim and broken, not a
+     clean bright ring */
+  #title-void .v-ring{
+    inset:-20%; border-radius:50%;
+    background:radial-gradient(circle at 47% 52%, transparent 0%, transparent 19%, rgba(120,70,60,0.25) 20.5%, transparent 23%);
+    filter:blur(1.5px);
+    animation:ringPulse 7s ease-in-out infinite;
+  }
+  /* grain, reusing the same noise data-url the title screen already
+     generates, for surface texture instead of a smooth gradient */
+  #title-void .v-grain{
+    background-size:140px 140px; opacity:.1; mix-blend-mode:overlay;
+    animation:grainShift 0.6s steps(4) infinite;
+  }
+  #title-void::after{
+    content:''; position:absolute; inset:0; border-radius:50%;
+    box-shadow:0 0 70px 24px rgba(0,0,0,0.85) inset;
+  }
+  @keyframes voidSpin{ 0%{transform:rotate(0deg);} 100%{transform:rotate(360deg);} }
+  @keyframes voidSpinRev{ 0%{transform:rotate(0deg);} 100%{transform:rotate(-360deg);} }
+  @keyframes ringPulse{ 0%,100%{opacity:.5;} 50%{opacity:.85;} }
+
+  /* the void as a living thing, not just idle-breakdown scenery: a rare
+     short micro-glitch (JS-scheduled, see VOID MICRO-GLITCH) and a subtle
+     reaction to which menu button is currently hovered - grows/brightens
+     for "Remember" (the one with weight), calms for "Credits". */
+  #title-void.void-micro{ animation: voidMicroGlitch .16s steps(2) 1; }
+  @keyframes voidMicroGlitch{
+    0%{ filter:url(#voidWarp); }
+    40%{ filter:url(#voidWarp) drop-shadow(-3px 0 rgba(255,20,40,0.4)) drop-shadow(3px 0 rgba(20,220,255,0.35)); opacity:.85; }
+    100%{ filter:url(#voidWarp); }
+  }
+  #title-screen.void-react-remember #title-void{ width:min(70vw,460px); height:min(70vw,460px); opacity:.85; }
+  #title-screen.void-react-calm #title-void{ opacity:.5; }
+
+  /* ---------- MENU BREAKDOWN (idle glitch event) ----------
+     After ~60s of no input at the main menu (see tickMenuIdle in JS), the
+     void above grows to fill the whole screen and goes fully chromatic/
+     glitched, then collapses back down. Reuses #title-void itself for the
+     growth (its own transition, extended below, drives the animation when
+     .breakdown-active toggles on #title-screen) rather than a second
+     duplicate element. */
+  #title-void{
+    transition:opacity 3s ease, width 1.3s cubic-bezier(.6,0,.85,1),
+      height 1.3s cubic-bezier(.6,0,.85,1), border-radius 1.1s ease;
+  }
+  #title-screen.breakdown-active #title-void{
+    width:150vmax; height:150vmax; border-radius:8%; opacity:1;
+  }
+  /* RGB-split ghost copies of the void, offset a few px and tinted red/cyan
+     - the standard chromatic-aberration trick. Zero cost outside the event
+     since opacity sits at 0 until .breakdown-active is present. */
+  #title-void::before, #title-void::after{
+    content:''; position:absolute; inset:0; border-radius:inherit;
+    background:radial-gradient(circle at 50% 50%, transparent 0%, transparent 20%, currentColor 32%, transparent 60%);
+    opacity:0; mix-blend-mode:screen; pointer-events:none;
+    transition:opacity .3s ease;
+  }
+  #title-void::before{ color:rgba(255,20,40,0.5); transform:translate(-6px,2px); }
+  #title-void::after{ color:rgba(20,220,255,0.45); transform:translate(6px,-2px); }
+  #title-screen.breakdown-active #title-void::before,
+  #title-screen.breakdown-active #title-void::after{
+    opacity:1; animation:breakdownRGBJitter .18s steps(2) infinite;
+  }
+  @keyframes breakdownRGBJitter{
+    0%{ transform:translate(-6px,2px); }
+    50%{ transform:translate(7px,-3px); }
+    100%{ transform:translate(-4px,3px); }
+  }
+  /* fullscreen static/scanline wash - reads as the screen itself losing
+     signal, not just the void behind it getting bigger */
+  #menu-breakdown-overlay{
+    position:fixed; inset:0; z-index:50; pointer-events:none; opacity:0;
+    mix-blend-mode:overlay;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0px, transparent 1px, transparent 3px),
+      repeating-linear-gradient(90deg, rgba(255,0,60,0.04) 0px, transparent 2px, transparent 5px);
+  }
+  #title-screen.breakdown-active #menu-breakdown-overlay{
+    opacity:1; animation:breakdownFlicker .11s steps(2) infinite;
+  }
+  @keyframes breakdownFlicker{ 0%{opacity:.55;} 40%{opacity:1;} 70%{opacity:.35;} 100%{opacity:.8;} }
+  /* the menu/logo itself visibly destabilizes along with the void, not
+     just a bigger shape sitting behind an otherwise-calm UI */
+  #title-screen.breakdown-active #title-logo,
+  #title-screen.breakdown-active #main-menu,
+  #title-screen.breakdown-active #title-sub{
+    animation:breakdownShake .35s infinite;
+  }
+  #title-screen.breakdown-active #title-logo h1{
+    animation:breakdownTextSplit .2s infinite;
+  }
+  @keyframes breakdownShake{
+    0%,100%{ transform:translate(0,0); }
+    20%{ transform:translate(-3px,2px); }
+    45%{ transform:translate(3px,-2px); }
+    70%{ transform:translate(-2px,-3px); }
+    85%{ transform:translate(2px,3px); }
+  }
+  @keyframes breakdownTextSplit{
+    0%,100%{ text-shadow:2px 0 rgba(255,20,40,0.7), -2px 0 rgba(20,220,255,0.6); }
+    50%{ text-shadow:-3px 0 rgba(255,20,40,0.7), 3px 0 rgba(20,220,255,0.6); }
+  }
+
+  /* subtitle beneath the logo - the "wrongness" hook, glitches in late.
+     Held back until after the glitch burst so it doesn't compete with it. */
+  #title-sub{
+    font-family:var(--font-mono); font-size:.72rem; letter-spacing:.22em; text-transform:uppercase;
+    color:rgba(201,194,182,0.55); margin:2px 0 0; opacity:0;
+  }
+  #title-screen.glitch-burst #title-sub{ animation:subFadeGlitch 1.6s ease .3s forwards; }
+  @keyframes subFadeGlitch{
+    0%{ opacity:0; transform:translateX(0); }
+    18%{ opacity:.7; transform:translateX(-2px); }
+    24%{ opacity:0; transform:translateX(3px); }
+    30%{ opacity:.5; transform:translateX(0); }
+    100%{ opacity:.6; transform:translateX(0); }
+  }
+
+  /* ---------- MAIN MENU ----------
+     Logo starts dead-center; once JS adds .show-menu it eases upward to
+     make room, and the four menu buttons fade/stagger in below it. This
+     replaces the old flow where the synopsis parked itself over the logo
+     automatically - now nothing happens until the player picks Remember. */
+  /* Logo and menu now live in normal flex flow (see #main-menu below) so
+     they stack and space themselves based on actual rendered height
+     instead of two independent fixed-position guesses - that's what let
+     the title overlap the menu buttons on short/narrow viewports before. */
+  #main-menu{
+    position:relative; z-index:4; margin-top:clamp(18px, 6vh, 64px);
+    display:flex; flex-direction:column; align-items:center; gap:20px;
+    pointer-events:none;
+  }
+  .menu-btn{
+    position:relative; z-index:0; background:none; border:none; padding:22px 36px 15px;
+    color:var(--bone); font-family:var(--font-mono); font-size:.78rem;
+    letter-spacing:.2em; text-transform:uppercase; cursor:pointer;
+    opacity:0; line-height:1.5; transition:color .25s ease;
+  }
+  /* Decorative paper layer, separated from the text above it. Rotation +
+     clip-path force the browser to rasterize whatever they're applied to,
+     which softens text badly - so the tilt/torn-edge/tape treatment all
+     lives here, on a layer with no text in it, and the actual label stays
+     in the flat, unrotated .menu-btn box so glyphs render crisp. */
+  .menu-btn .mb-paper{
+    position:absolute; inset:0; z-index:-1;
+    background:
+      radial-gradient(circle at 18% 20%, rgba(255,255,255,0.05) 0%, transparent 42%),
+      radial-gradient(circle at 88% 85%, rgba(90,24,24,0.16) 0%, transparent 55%),
+      repeating-linear-gradient(178deg, rgba(255,255,255,0.015) 0px, transparent 1px, transparent 3px),
+      rgba(10,9,12,0.58);
+    border:1px solid rgba(201,194,182,0.26);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 18px rgba(0,0,0,0.4);
+    transition:background .25s ease, border-color .25s ease, box-shadow .25s ease;
+    clip-path: polygon(0% 4%, 6% 0%, 94% 1%, 100% 6%, 99% 92%, 93% 100%, 8% 99%, 1% 94%);
+    transform: rotate(var(--rot,0deg));
+  }
+  /* a scrap of tape pinning each note down - slight rotation, translucent,
+     one per button, offset differently so they don't look copy-pasted */
+  .menu-btn .mb-paper::before{
+    content:''; position:absolute; top:3px; left:26px; width:38px; height:14px;
+    background:rgba(201,194,182,0.14); border:1px solid rgba(201,194,182,0.2);
+    box-shadow:0 2px 5px rgba(0,0,0,0.35); transform:rotate(-5deg);
+  }
+  .menu-btn .mb-sub{
+    display:block; font-size:.52rem; letter-spacing:.14em; opacity:.5; margin-top:5px; line-height:1.4;
+  }
+  .menu-btn:not(.disabled):hover .mb-paper{
+    background:
+      radial-gradient(circle at 18% 20%, rgba(255,255,255,0.05) 0%, transparent 42%),
+      radial-gradient(circle at 88% 85%, rgba(122,31,31,0.22) 0%, transparent 55%),
+      rgba(20,10,12,0.6);
+    border-color:rgba(201,194,182,0.55);
+  }
+  .menu-btn.disabled{ color:rgba(201,194,182,0.3); cursor:default; }
+  .menu-btn.disabled .mb-paper{ border-color:rgba(201,194,182,0.12); }
+  .menu-btn.disabled .mb-paper::before{ opacity:.4; }
+  /* physical press feel - paper dips slightly under the finger; a
+     separate short-lived JS-triggered class (.btn-corrupt, see PRESS
+     FEEDBACK in JS) layers a quick chromatic stutter on top so a press
+     *reads* as wrong, not just clicked. */
+  .menu-btn:not(.disabled):active .mb-paper{
+    transform: rotate(var(--rot,0deg)) scale(0.95) translateY(1px) !important;
+    transition: transform .06s ease !important;
+  }
+  .menu-btn.btn-corrupt .mb-paper{ animation: btnPressCorrupt .22s steps(2) 1; }
+  @keyframes btnPressCorrupt{
+    0%{ filter:none; }
+    35%{ filter:drop-shadow(-2px 0 rgba(255,20,40,0.55)) drop-shadow(2px 0 rgba(20,220,255,0.5)); }
+    70%{ filter:drop-shadow(2px 0 rgba(255,20,40,0.4)) drop-shadow(-1px 0 rgba(20,220,255,0.4)); }
+    100%{ filter:none; }
+  }
+  /* keyboard focus - custom torn/glitch ring instead of the invisible
+     default outline on this near-black background */
+  .menu-btn:focus-visible{ outline:none; }
+  .menu-btn:focus-visible .mb-paper{ border-color:rgba(201,194,182,0.75); box-shadow:0 0 0 1px rgba(201,194,182,0.3), 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 18px rgba(0,0,0,0.4); }
+  /* each scrap sits at its own slight angle and tape position, like they
+     were pinned to a board at different times rather than printed as a set */
+  #main-menu .menu-btn:nth-child(1) .mb-paper{ --rot:-1.1deg; }
+  #main-menu .menu-btn:nth-child(2) .mb-paper{ --rot:0.8deg; clip-path: polygon(1% 2%, 92% 0%, 100% 8%, 98% 96%, 90% 100%, 5% 98%, 0% 90%, 3% 10%); }
+  #main-menu .menu-btn:nth-child(2) .mb-paper::before{ left:auto; right:30px; top:3px; transform:rotate(6deg); }
+  #main-menu .menu-btn:nth-child(3) .mb-paper{ --rot:-0.6deg; clip-path: polygon(3% 0%, 96% 3%, 100% 90%, 97% 100%, 10% 97%, 0% 85%, 2% 6%); }
+  #main-menu .menu-btn:nth-child(4) .mb-paper{ --rot:1.2deg; clip-path: polygon(0% 8%, 4% 0%, 95% 2%, 100% 12%, 100% 94%, 91% 100%, 6% 98%, 0% 88%); }
+  #main-menu .menu-btn:nth-child(4) .mb-paper::before{ left:auto; right:22px; top:3px; transform:rotate(-7deg); }
+  #title-screen.show-menu #main-menu{
+    pointer-events:auto;
+    animation:menuFadeIn .6s ease forwards;
+  }
+  #title-screen.show-menu .menu-btn{ animation:menuBtnIn .5s ease forwards; }
+  #title-screen.show-menu .menu-btn:nth-child(1){ animation-delay:.15s; }
+  #title-screen.show-menu .menu-btn:nth-child(2){ animation-delay:.28s; }
+  #title-screen.show-menu .menu-btn:nth-child(3){ animation-delay:.41s; }
+  #title-screen.show-menu .menu-btn:nth-child(4){ animation-delay:.54s; }
+  @keyframes menuFadeIn{ from{opacity:0;} to{opacity:1;} }
+  @keyframes menuBtnIn{
+    from{ opacity:0; transform:translateY(8px); }
+    to{ opacity:1; transform:translateY(0); }
+  }
+  /* a single ephemeral line under the menu - flavor rather than clinical
+     UI copy (e.g. "no saves found" reads as a haunted admission instead
+     of a system message). Shown/hidden by showMenuFlavor() in JS. */
+  #menu-flavor{
+    margin-top:14px; font-family:var(--font-serif); font-style:italic;
+    font-size:.72rem; letter-spacing:.02em; color:rgba(201,194,182,0.4);
+    opacity:0; transform:translateY(-2px); transition:opacity .5s ease, transform .5s ease;
+    text-align:center; max-width:280px; pointer-events:none;
+  }
+  #menu-flavor.show{ opacity:1; transform:translateY(0); }
+
+
+  /* ---------- SETTINGS / CREDITS OVERLAYS ----------
+     Same fixed full-screen dim treatment as #bigmap-overlay, reused here
+     rather than invented fresh. */
+  #settings-overlay, #credits-overlay{
+    position:fixed; inset:0; z-index:90; background:rgba(4,3,5,0.94);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    opacity:0; pointer-events:none; transition:opacity .25s ease;
+    padding:24px;
+  }
+  #settings-overlay.open, #credits-overlay.open{ opacity:1; pointer-events:auto; }
+
+  /* Memories / Radio Log / Inventory / Help - opened from the in-game
+     pause menu. Same dim-backdrop + panel-box chrome as Settings/Credits
+     (z-index 90, same layer - only one of these is ever open at once,
+     always from the pause menu underneath at z-index 85). */
+  #memories-overlay, #radiolog-overlay, #inventory-overlay, #help-overlay{
+    position:fixed; inset:0; z-index:90; background:rgba(4,3,5,0.94);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    opacity:0; pointer-events:none; transition:opacity .25s ease;
+    padding:24px;
+  }
+  #memories-overlay.open, #radiolog-overlay.open, #inventory-overlay.open, #help-overlay.open{
+    opacity:1; pointer-events:auto;
+  }
+  .panel-box-tall{ max-width:480px; }
+  .panel-box .panel-sub{
+    font-size:.62rem; letter-spacing:.2em; opacity:.4; text-transform:uppercase;
+    margin:-6px 0 16px; text-align:center;
+  }
+  .panel-scroll{
+    max-height:48vh; overflow-y:auto; margin:4px -6px 4px 0; padding-right:10px;
+  }
+  /* reuses the lore-entry look originally built for a memory-review panel
+     that never got wired up - the CSS existed, unused, for who knows how
+     long. Putting it back to work here instead of writing new rules. */
+  .lore-entry{ margin-bottom:20px; padding:14px 0 14px 14px; border-left:2px solid rgba(122,31,31,0.4); position:relative; }
+  .lore-entry h3{ font-size:.68rem; letter-spacing:.25em; color:var(--rust); text-transform:uppercase; margin:0 0 8px 0; font-weight:700; font-family:var(--font-mono); }
+  .lore-entry p{ font-family:var(--font-serif); font-size:.92rem; line-height:1.6; opacity:.88; margin:0; font-style:italic; letter-spacing:.01em; }
+  .lore-entry.locked{ border-left-color:rgba(201,194,182,0.15); }
+  .lore-entry.locked h3{ color:rgba(201,194,182,0.35); }
+  #lore-empty{ font-size:.78rem; opacity:.32; line-height:1.9; font-family:var(--font-serif); font-style:italic; letter-spacing:.02em; text-align:center; }
+  .radiolog-entry{ margin-bottom:16px; padding:10px 0 10px 12px; border-left:2px solid rgba(201,194,182,0.2); }
+  .radiolog-entry.warning{ border-left-color:rgba(122,31,31,0.5); }
+  .radiolog-entry .rl-time{ font-size:.58rem; letter-spacing:.16em; opacity:.35; text-transform:uppercase; display:block; margin-bottom:4px; }
+  .radiolog-entry .rl-text{ font-family:var(--font-serif); font-size:.88rem; line-height:1.55; opacity:.85; font-style:italic; }
+  .inventory-row{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding:12px 0; border-bottom:1px solid rgba(201,194,182,0.12);
+    font-size:.78rem; letter-spacing:.04em;
+  }
+  .inventory-row .inv-name{ color:var(--bone); }
+  .inventory-row .inv-status{ font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; opacity:.55; }
+  .inventory-row.inv-have .inv-status{ color:var(--rust); opacity:.85; }
+  /* ---------- BAG GRID (Phase 3 item/inventory framework) ----------
+     A literal small bag of slots now, not just a status list - the grid
+     sits above the existing objectives rows (untouched styling above).
+     Slot tiles are deliberately plain (a bordered square + one glyph),
+     matching the worn/utilitarian read of the rest of the UI rather
+     than trying to look like painted item icons. */
+  .inv-bag{ margin-bottom:18px; }
+  .inv-grid{
+    display:grid; grid-template-columns:repeat(6, 1fr); gap:8px;
+    margin-bottom:14px;
+  }
+  .inv-slot{
+    aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+    border:1px solid rgba(201,194,182,0.18); background:rgba(201,194,182,0.03);
+    cursor:pointer; transition:border-color .15s ease, background .15s ease;
+  }
+  .inv-slot:hover{ border-color:rgba(201,194,182,0.4); }
+  .inv-slot.empty .inv-glyph{ opacity:.22; }
+  .inv-slot.filled{ border-color:rgba(122,31,31,0.4); background:rgba(122,31,31,0.06); }
+  .inv-slot.filled .inv-glyph{ color:var(--rust); opacity:.9; }
+  .inv-slot.selected{ border-color:var(--bone); box-shadow:0 0 0 1px rgba(201,194,182,0.25) inset; }
+  .inv-glyph{ font-size:1.1rem; color:var(--bone); line-height:1; user-select:none; }
+  .inv-detail{
+    min-height:64px; padding:12px 14px; border-left:2px solid rgba(122,31,31,0.4);
+    background:rgba(201,194,182,0.02);
+  }
+  .inv-detail.inv-detail-empty{ opacity:.4; font-style:italic; font-family:var(--font-serif); font-size:.82rem; border-left-color:rgba(201,194,182,0.15); }
+  .inv-detail-name{ font-size:.7rem; letter-spacing:.18em; text-transform:uppercase; color:var(--bone); margin-bottom:6px; font-family:var(--font-mono); }
+  .inv-detail.inv-have .inv-detail-name{ color:var(--rust); }
+  .inv-detail-desc{ font-family:var(--font-serif); font-size:.86rem; line-height:1.55; opacity:.85; font-style:italic; }
+  .inv-section-label{
+    font-size:.62rem; letter-spacing:.2em; text-transform:uppercase; opacity:.4;
+    margin:4px 0 4px; padding-top:10px; border-top:1px solid rgba(201,194,182,0.1);
+  }
+  .help-row{ margin-bottom:16px; }
+  .help-row .help-key{
+    display:inline-block; min-width:120px; font-family:var(--font-mono); font-size:.7rem;
+    letter-spacing:.08em; color:var(--rust); text-transform:uppercase; margin-right:10px;
+  }
+  .help-row .help-desc{ font-family:var(--font-serif); font-size:.85rem; opacity:.8; font-style:italic; }
+  .help-section-title{
+    font-size:.62rem; letter-spacing:.24em; text-transform:uppercase; opacity:.45;
+    margin:18px 0 10px; font-family:var(--font-mono);
+  }
+  .help-section-title:first-child{ margin-top:0; }
+
+  /* ---------- IN-GAME PAUSE MENU (custom SVG) ----------
+     Same fixed dim-backdrop treatment as the other overlays, but the
+     panel chrome itself is real SVG rather than styled divs - a torn
+     paper path, a tape scrap, and four button groups built from a
+     shared reusable torn-rect <path> referenced via <use>. Sits below
+     Settings/Credits (z-index 85 vs 90) since opening Settings from here
+     should layer on top of it, not replace it. */
+  #pause-overlay{
+    position:fixed; inset:0; z-index:85; background:rgba(4,3,5,0.9);
+    display:flex; align-items:center; justify-content:center;
+    opacity:0; pointer-events:none; transition:opacity .25s ease;
+    padding:24px;
+  }
+  #pause-overlay.open{ opacity:1; pointer-events:auto; }
+  #pause-svg{ width:min(88vw,340px); max-height:94vh; height:auto; overflow:visible; }
+  #pause-overlay{ overflow-y:auto; }
+  .pause-panel-bg{
+    fill:rgba(10,9,12,0.92); stroke:rgba(201,194,182,0.28); stroke-width:1.5;
+  }
+  .pause-tape{ fill:rgba(201,194,182,0.14); stroke:rgba(201,194,182,0.2); stroke-width:1; }
+  .pause-title{
+    font-family:var(--font-headline); font-size:26px; letter-spacing:.28em;
+    fill:var(--bone); text-transform:uppercase;
+  }
+  .pause-sub{
+    font-family:var(--font-serif); font-style:italic; font-size:12px;
+    letter-spacing:.03em; fill:rgba(201,194,182,0.45);
+  }
+  .pause-flavor{
+    font-family:var(--font-serif); font-style:italic; font-size:11px;
+    fill:rgba(201,194,182,0.4); opacity:0; transition:opacity .5s ease;
+  }
+  .pause-flavor.show{ opacity:1; }
+  .svg-menu-btn{ cursor:pointer; outline:none; }
+  .svg-menu-btn use{
+    fill:rgba(20,10,12,0.55); stroke:rgba(201,194,182,0.3); stroke-width:1;
+    transition:fill .2s ease, stroke .2s ease, transform .06s ease;
+    transform-box:fill-box; transform-origin:center;
+  }
+  .svg-menu-btn text{
+    font-family:var(--font-mono); font-size:15px; letter-spacing:.14em;
+    fill:var(--bone); text-transform:uppercase; pointer-events:none;
+  }
+  .svg-menu-btn:hover use{ fill:rgba(20,10,12,0.75); stroke:rgba(201,194,182,0.55); }
+  .svg-menu-btn:active use, .svg-menu-btn.btn-corrupt use{ transform:scale(0.96); }
+  .svg-menu-btn:focus-visible use{ stroke:rgba(201,194,182,0.85); stroke-width:1.5; }
+  .svg-footer-link{
+    font-family:var(--font-mono); font-size:12px; letter-spacing:.12em; text-transform:uppercase;
+    fill:rgba(201,194,182,0.55); cursor:pointer; outline:none;
+    transition:fill .2s ease;
+  }
+  .svg-footer-link:hover, .svg-footer-link:focus-visible{ fill:rgba(201,194,182,0.9); }
+  .svg-footer-link.danger{ fill:rgba(201,120,120,0.6); }
+  .svg-footer-link.danger:hover, .svg-footer-link.danger:focus-visible{ fill:rgba(220,110,110,0.95); }
+  .svg-footer-link.btn-corrupt{ animation: btnPressCorrupt .22s steps(2) 1; }
+  .panel-box{
+    max-width:420px; width:100%; font-family:var(--font-mono);
+    position:relative; padding:34px 30px 26px;
+    background:
+      radial-gradient(circle at 15% 10%, rgba(255,255,255,0.04) 0%, transparent 45%),
+      radial-gradient(circle at 90% 92%, rgba(90,24,24,0.14) 0%, transparent 55%),
+      rgba(10,9,12,0.5);
+    border:1px solid rgba(201,194,182,0.22);
+    clip-path: polygon(0% 1.5%, 2% 0%, 98% 0.5%, 100% 2.5%, 99.3% 97%, 97% 100%, 3% 99.3%, 0.5% 96%);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 12px 30px rgba(0,0,0,0.5);
+  }
+  .panel-box::before{
+    content:''; position:absolute; top:-6px; left:50%; transform:translateX(-50%) rotate(-3deg);
+    width:52px; height:16px; background:rgba(201,194,182,0.14);
+    border:1px solid rgba(201,194,182,0.2); box-shadow:0 2px 5px rgba(0,0,0,0.35);
+  }
+  .panel-title{
+    font-family:var(--font-serif); letter-spacing:.28em; text-transform:uppercase;
+    font-size:1rem; color:var(--bone); text-align:center; margin-bottom:22px;
+  }
+  .panel-row{ margin-bottom:20px; }
+  .panel-row label{
+    display:flex; justify-content:space-between; font-size:.62rem;
+    letter-spacing:.14em; text-transform:uppercase; opacity:.65; margin-bottom:8px;
+  }
+  .panel-row input[type="range"]{ width:100%; }
+  /* ---------- BLOOD SLIDERS ----------
+     Track fills like blood pooling left-to-right (JS sets --fill per input
+     on load + on input). Thumb reads as a rotary knob - a metal disc with
+     a notch that actually rotates to point at the current value, not a
+     flat native thumb. At/near max, a drop breaks off the filled edge and
+     runs down the panel (.slider-wrap.full toggled by JS). */
+  .slider-wrap{ position:relative; padding-bottom:2px; }
+  .panel-row input[type="range"]{
+    -webkit-appearance:none; appearance:none; width:100%; height:7px; border-radius:1px;
+    background:
+      linear-gradient(180deg, rgba(0,0,0,0.35), transparent 40%),
+      linear-gradient(90deg, #6e0f0f 0%, #9c1616 var(--fill,50%), rgba(255,255,255,0.07) var(--fill,50%));
+    outline:none; cursor:pointer; border:1px solid rgba(0,0,0,0.4);
+    box-shadow:0 1px 0 rgba(255,255,255,0.04);
+  }
+  .panel-row input[type="range"]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:24px; height:24px; border-radius:50%; margin-top:0;
+    background:
+      radial-gradient(circle at 34% 28%, rgba(255,255,255,0.4) 0%, transparent 45%),
+      conic-gradient(from calc(var(--angle,-120deg) - 5deg), var(--rust) 0deg 10deg, transparent 10deg 360deg),
+      radial-gradient(circle at 50% 50%, #322426 0%, #1a1113 70%, #0c0708 100%);
+    border:1px solid rgba(201,194,182,0.5);
+    box-shadow:0 2px 5px rgba(0,0,0,0.65), inset 0 1px 1px rgba(255,255,255,0.15);
+    cursor:pointer; transition:box-shadow .15s ease;
+  }
+  .panel-row input[type="range"]::-moz-range-thumb{
+    width:24px; height:24px; border-radius:50%; border:1px solid rgba(201,194,182,0.5);
+    background:
+      radial-gradient(circle at 34% 28%, rgba(255,255,255,0.4) 0%, transparent 45%),
+      radial-gradient(circle at 50% 50%, #322426 0%, #1a1113 70%, #0c0708 100%);
+    box-shadow:0 2px 5px rgba(0,0,0,0.65), inset 0 1px 1px rgba(255,255,255,0.15);
+    cursor:pointer;
+  }
+  .panel-row input[type="range"]::-moz-range-track{
+    height:7px; border-radius:1px; border:1px solid rgba(0,0,0,0.4);
+    background:
+      linear-gradient(90deg, #6e0f0f 0%, #9c1616 var(--fill,50%), rgba(255,255,255,0.07) var(--fill,50%));
+  }
+  .panel-row input[type="range"]:active::-webkit-slider-thumb{ box-shadow:0 2px 5px rgba(0,0,0,0.65), 0 0 0 4px rgba(122,31,31,0.28); }
+  /* the drop: sits pinned to the filled edge of the track, invisible until
+     .full is toggled on, then breaks off and runs down + a thin trailing
+     line behind it, looping while the slider stays maxed */
+  .slider-drip{
+    position:absolute; top:6px; left:var(--fill,50%); width:5px; height:5px;
+    margin-left:-2.5px; border-radius:50% 50% 60% 60%; background:#8a1414;
+    opacity:0; pointer-events:none; box-shadow:0 0 3px rgba(122,15,15,0.6);
+  }
+  .slider-drip::before{
+    content:''; position:absolute; top:-5px; left:50%; width:1.5px; height:0;
+    background:linear-gradient(180deg, transparent, #6e0f0f); transform:translateX(-50%);
+  }
+  .slider-wrap.full .slider-drip{ animation:bloodDrip 2.6s ease-in infinite; }
+  @keyframes bloodDrip{
+    0%{ opacity:0; top:6px; height:5px; }
+    8%{ opacity:.9; }
+    70%{ opacity:.85; top:26px; height:7px; }
+    92%{ opacity:0; top:30px; }
+    100%{ opacity:0; top:6px; height:5px; }
+  }
+
+  .panel-select{
+    width:100%; background:rgba(255,255,255,0.05); color:rgba(201,194,182,0.5);
+    border:1px solid rgba(201,194,182,0.2); padding:8px; font-family:var(--font-mono); font-size:.7rem;
+  }
+  .panel-close{
+    display:block; margin:26px auto 0; background:none; border:1px solid rgba(201,194,182,0.3);
+    color:var(--bone); font-family:var(--font-mono); letter-spacing:.2em; text-transform:uppercase;
+    font-size:.7rem; padding:9px 30px; cursor:pointer;
+    transition:transform .06s ease, border-color .2s ease; min-height:44px;
+  }
+  .panel-close:hover{ border-color:rgba(201,194,182,0.55); }
+  .panel-close:active{ transform:scale(0.95); }
+  .panel-close:focus-visible, .danger-btn:focus-visible{ outline:none; box-shadow:0 0 0 1px rgba(201,194,182,0.4); }
+  .danger-btn{
+    display:block; margin:14px auto 0; background:none; border:1px solid rgba(122,31,31,0.5);
+    color:rgba(201,120,120,0.8); font-family:var(--font-mono); letter-spacing:.14em; text-transform:uppercase;
+    font-size:.6rem; padding:8px 20px; cursor:pointer;
+    transition:transform .06s ease, border-color .2s ease; min-height:40px;
+  }
+  .danger-btn:hover{ border-color:rgba(122,31,31,0.85); }
+  .danger-btn:active{ transform:scale(0.95); }
+  .panel-close.btn-corrupt, .danger-btn.btn-corrupt{ animation: btnPressCorrupt .22s steps(2) 1; }
+  /* ---------- TOGGLE SWITCHES ----------
+     Same blood-red-when-active language as the sliders above, scaled down
+     to a small pill switch rather than a native checkbox. */
+  .toggle-row{ display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+  .toggle-row label{ font-size:.62rem; letter-spacing:.14em; text-transform:uppercase; opacity:.65; }
+  .toggle-switch{ position:relative; display:inline-block; width:44px; height:24px; flex:0 0 auto; }
+  .toggle-switch input{ position:absolute; inset:0; opacity:0; margin:0; cursor:pointer; z-index:1; }
+  .toggle-track{
+    position:absolute; inset:0; border-radius:12px; border:1px solid rgba(0,0,0,0.4);
+    background:rgba(255,255,255,0.07); transition:background .2s ease;
+  }
+  .toggle-switch input:checked ~ .toggle-track{ background:linear-gradient(90deg,#6e0f0f,#9c1616); }
+  .toggle-thumb{
+    position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+    background:radial-gradient(circle at 34% 28%, rgba(255,255,255,0.4) 0%, transparent 45%),
+      radial-gradient(circle at 50% 50%, #322426 0%, #1a1113 70%, #0c0708 100%);
+    border:1px solid rgba(201,194,182,0.5); box-shadow:0 2px 4px rgba(0,0,0,0.6);
+    transition:left .2s ease; pointer-events:none;
+  }
+  .toggle-switch input:checked ~ .toggle-thumb{ left:22px; }
+  .toggle-switch input:focus-visible ~ .toggle-track{ box-shadow:0 0 0 1px rgba(201,194,182,0.4); }
+  /* ---------- CREDITS CRAWL ----------
+     Classic movie-style scroll: a fixed-height viewport with overflow
+     hidden, and an inner block taller than the screen that animates from
+     just below the bottom edge to well above the top edge. Restarted from
+     JS each time the overlay opens (remove+reflow+readd the animation
+     class) rather than relying on the animation's own iteration-count,
+     since the overlay can be closed and reopened mid-scroll. */
+  #credits-overlay{ padding:0; }
+  #credits-version{
+    position:absolute; bottom:8px; left:12px; z-index:2;
+    font-family:var(--font-mono); font-size:.65rem; letter-spacing:.06em;
+    color:rgba(201,194,182,0.35); pointer-events:none;
+  }
+  #credits-viewport{
+    position:relative; width:100%; max-width:520px; height:100%;
+    overflow:hidden;
+    -webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 8%, #000 88%, transparent 100%);
+    mask-image:linear-gradient(to bottom, transparent 0%, #000 8%, #000 88%, transparent 100%);
+  }
+  #credits-crawl{
+    position:absolute; left:0; right:0; top:100%;
+    font-family:var(--font-mono); padding:0 24px;
+  }
+  #credits-overlay.open #credits-crawl.rolling{
+    animation:creditsCrawl 62s linear forwards;
+  }
+  @keyframes creditsCrawl{
+    from{ transform:translateY(0); }
+    to{ transform:translateY(calc(-100% - 100vh)); }
+  }
+  .credits-block{ margin-bottom:54px; text-align:center; }
+  .credits-block-title{ margin-bottom:70px; }
+  .credits-logo{
+    font-family:var(--font-serif); letter-spacing:.3em; text-transform:uppercase;
+    font-size:1.6rem; color:var(--bone);
+  }
+  .credits-tag{
+    font-size:.68rem; letter-spacing:.2em; text-transform:uppercase;
+    color:rgba(201,194,182,0.5); margin-top:8px;
+  }
+  .credits-heading{
+    font-family:var(--font-serif); letter-spacing:.22em; text-transform:uppercase;
+    font-size:.85rem; color:rgba(201,194,182,0.75); margin-bottom:18px;
+  }
+  .credit-row.center{ justify-content:center; }
+  .credit-role-only{
+    font-size:.66rem; letter-spacing:.1em; color:rgba(201,194,182,0.45);
+    margin-bottom:10px; text-transform:lowercase; font-style:italic;
+  }
+  .credits-block-final{ margin-top:20px; margin-bottom:120px; }
+  .panel-close{ position:relative; z-index:2; }
+  #credits-overlay .panel-close{ margin:18px auto 24px; }
+
+     chromatic glitch - except the one line that's meant to actually read.
+     data-text carries the real string so the glitch layers can sample it
+     without ever putting it in visible DOM text. */
+  .credit-row{ display:flex; justify-content:space-between; margin-bottom:14px; font-size:.68rem; }
+  .credit-role{ opacity:.55; letter-spacing:.08em; }
+  .redacted{
+    position:relative; color:transparent; min-width:120px; text-align:right;
+    background:rgba(255,255,255,0.05); border-radius:2px;
+  }
+  .redacted::before, .redacted::after{
+    content:attr(data-text); position:absolute; right:0; top:0; white-space:nowrap;
+    mix-blend-mode:screen;
+  }
+  .redacted::before{ color:#ff2b4d; clip-path:inset(0 0 55% 0); transform:translate(-2px,-1px); animation:redactA 2.6s infinite steps(1); }
+  .redacted::after{ color:#2bdcff; clip-path:inset(45% 0 0 0); transform:translate(2px,1px); animation:redactB 3.1s infinite steps(1); }
+  @keyframes redactA{ 0%,80%{opacity:.35;} 82%{opacity:.7; transform:translate(-4px,-2px);} 84%{opacity:.2;} 100%{opacity:.35;} }
+  @keyframes redactB{ 0%,70%{opacity:.3;} 73%{opacity:.65; transform:translate(3px,2px);} 76%{opacity:.15;} 100%{opacity:.3;} }
+  .credit-real{ color:var(--bone); font-weight:700; letter-spacing:.06em; }
+
+  /* ---------- SYNOPSIS PANEL ----------
+     Covers the ENTIRE screen, wiping down from the top with a torn,
+     jagged leading edge (not a clean straight wipe) once JS adds
+     .show-setup. Sits above the title, which gets swallowed by it. */
+  #title-menu{
+    position:fixed; inset:0; z-index:5;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:24px; padding-top:calc(24px + var(--safe-t)); padding-bottom:calc(24px + var(--safe-b));
+    background:
+      radial-gradient(ellipse at 50% 30%, rgba(9,8,10,0.97) 0%, rgba(4,3,5,0.995) 72%),
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, transparent 1px, transparent 3px);
+    clip-path: polygon(0 0, 100% 0, 100% 0, 0 0);
+    pointer-events:none;
+  }
+  #title-screen.show-setup #title-menu{
+    pointer-events:auto;
+    animation:wipeDownTorn 1s cubic-bezier(.68,-0.05,.2,1) forwards;
+  }
+  @keyframes wipeDownTorn{
+    0%{ clip-path: polygon(0 0, 100% 0, 100% 0, 0 0); }
+    22%{ clip-path: polygon(0 0, 100% 0, 100% 18%, 68% 24%, 52% 14%, 30% 22%, 0 16%); }
+    48%{ clip-path: polygon(0 0, 100% 0, 100% 48%, 74% 55%, 46% 42%, 22% 53%, 0 46%); }
+    72%{ clip-path: polygon(0 0, 100% 0, 100% 78%, 70% 84%, 42% 72%, 18% 82%, 0 76%); }
+    100%{ clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+  }
+  #title-setup{
+    max-width:340px; text-align:center; font-family:var(--font-serif);
+    font-size:.74rem; line-height:1.85; letter-spacing:.03em;
+    color:rgba(201,194,182,0.62); margin-bottom:26px; padding:0 18px;
+    border-left:2px solid rgba(122,31,31,0.5); text-align:left;
+    opacity:0;
+  }
+  /* the .74rem/340px sizing above reads fine on a phone held at arm's
+     length, but on a desktop monitor at normal viewing distance it shrinks
+     to a barely-legible paragraph in the middle of a huge dark screen.
+     Scale both font size and the block's width up past phone/tablet widths. */
+  @media (min-width:900px){
+    #title-setup{ max-width:560px; font-size:1.05rem; line-height:1.9; padding:0 26px; }
+    #title-setup .setup-tag{ font-size:.7rem; }
+  }
+  @media (min-width:1400px){
+    #title-setup{ max-width:660px; font-size:1.18rem; }
+  }
+  #title-screen.show-setup #title-setup{ animation:setupFlicker .5s steps(2) .9s forwards; }
+  @keyframes setupFlicker{
+    0%{ opacity:0; }
+    30%{ opacity:.6; }
+    45%{ opacity:.15; }
+    70%{ opacity:.8; }
+    100%{ opacity:1; }
+  }
+  #title-setup em{ color:rgba(201,194,182,0.88); font-style:normal; }
+  #title-setup .setup-tag{
+    display:block; font-family:var(--font-mono); font-size:.52rem;
+    letter-spacing:.18em; opacity:.45; margin-bottom:10px; text-transform:uppercase;
+  }
+
+  /* ---------- BEGIN BUTTON ----------
+     Deliberately rough: a torn, slightly rotated shape with an uneven
+     stained background rather than a clean chamfered rectangle - it
+     should look like it doesn't quite belong on a polished UI. Stays
+     invisible/unclickable until JS adds .show-btn, well after the
+     synopsis has had time to be read. */
+  #begin-btn{
+    position:relative;
+    background:
+      radial-gradient(circle at 28% 22%, rgba(90,24,24,0.28) 0%, transparent 55%),
+      radial-gradient(circle at 78% 82%, rgba(30,16,36,0.32) 0%, transparent 50%),
+      rgba(6,6,8,0.55);
+    color:var(--bone); border:1px solid rgba(201,194,182,0.32);
+    padding:18px 50px; font-family:var(--font-mono); font-weight:700; font-size:.8rem; letter-spacing:0.22em;
+    cursor:pointer; text-transform:uppercase; transition:background .3s ease, border-color .3s ease;
+    margin-bottom:22px; line-height:1.5;
+    transform:rotate(-0.7deg);
+    clip-path: polygon(4% 0%, 92% 3%, 100% 30%, 97% 62%, 100% 88%, 88% 100%, 46% 97%, 14% 100%, 0% 70%, 3% 34%);
+    opacity:0; pointer-events:none;
+  }
+  #title-screen.show-btn #begin-btn{
+    animation:btnRevealRough .9s steps(3) forwards;
+    pointer-events:auto;
+  }
+  @keyframes btnRevealRough{
+    0%{ opacity:0; transform:rotate(-0.7deg) translateY(5px); }
+    30%{ opacity:.55; transform:rotate(.8deg) translateY(1px); }
+    55%{ opacity:.2; transform:rotate(-0.4deg); }
+    80%{ opacity:.85; transform:rotate(-0.9deg); }
+    100%{ opacity:1; transform:rotate(-0.7deg) translateY(0); }
+  }
+  #begin-btn::before, #begin-btn::after{
+    content:'▸'; position:absolute; top:50%; transform:translateY(-50%); opacity:0; transition:opacity .25s ease, transform .25s ease; font-size:.7rem;
+  }
+  #begin-btn::before{ left:18px; }
+  #begin-btn::after{ right:18px; transform:translateY(-50%) scaleX(-1); }
+  #begin-btn:hover::before{ opacity:.7; transform:translateY(-50%) translateX(3px); }
+  #begin-btn:hover::after{ opacity:.7; transform:translateY(-50%) scaleX(-1) translateX(3px); }
+  #begin-btn:active{
+    background:rgba(122,31,31,0.25); border-color:var(--rust);
+    transform:rotate(-0.7deg) scale(0.96) translateY(1px);
+  }
+  #begin-btn.btn-corrupt{ animation: btnPressCorrupt .22s steps(2) 1; }
+  #begin-btn:focus-visible{ outline:none; box-shadow:0 0 0 1px rgba(201,194,182,0.4); }
+
+  /* ---------- ROTATE OVERLAY ---------- */
+  #rotate-overlay{ display:none; } /* portrait is now supported - overlay never shows */
+
+  /* ---------- TOUCH TARGET SIZING (title menu) ----------
+     The torn-paper buttons look right at their current padding but that
+     padding alone doesn't guarantee a comfortable tap target on a phone -
+     bump the box (not the visual paper layer's proportions) so each
+     button clears a ~46px minimum touch height without changing how it
+     looks. */
+  @media (max-width:600px), (pointer:coarse){
+    .menu-btn{ padding:20px 30px 20px; min-height:46px; }
+    .panel-close{ min-height:48px; padding:12px 30px; }
+    .danger-btn{ min-height:44px; padding:11px 20px; }
+    #begin-btn{ padding:20px 50px; min-height:48px; }
+    .panel-row input[type="range"]{ height:10px; }
+    .panel-row input[type="range"]::-webkit-slider-thumb{ width:28px; height:28px; }
+    .panel-row input[type="range"]::-moz-range-thumb{ width:28px; height:28px; }
+  }
+
+
+  /* ============================================================
+     PORTRAIT MODE — vertical phone layout
+     The 3D scene fills the screen as-is (Three.js handles aspect
+     ratio natively). What changes is the control zone layout:
+     - look zone: upper 60% of screen (camera drag - you look up/down/around
+       with your thumbs from the middle, not the bottom edge)
+     - joystick zone: bottom-left corner, taller to give thumb room
+     - interact button: bottom-right
+     - HUD elements: scaled down and repositioned so they don't overlap controls
+     ============================================================ */
+  @media (orientation:portrait){
+    /* look zone takes the upper/middle portion; movement is at the bottom */
+    #look-zone{
+      position:absolute; left:0; top:0; width:100%; height:62%;
+      pointer-events:auto;
+    }
+    #joystick-zone{
+      position:absolute; left:0; bottom:0; width:52%; height:42%;
+      pointer-events:auto;
+    }
+    /* interact button doesn't need to dodge the joystick zone in portrait */
+    #interact-btn{
+      right:calc(18px + var(--safe-r));
+      bottom:calc(24px + var(--safe-b));
+    }
+    /* minimap: move it to bottom-right area, above the interact btn */
+    #minimap{
+      top:auto; bottom:calc(110px + var(--safe-b));
+      right:calc(14px + var(--safe-r));
+      width:88px; height:88px;
+    }
+    /* top-bar hugs the notch */
+    #top-bar{
+      padding-top:calc(var(--safe-t) + 6px);
+    }
+    /* compass strip is visible in portrait but smaller */
+    #compass-strip{
+      font-size:.52rem; letter-spacing:.12em;
+    }
+    /* whisper text: sit higher so it doesn't land on the control zone */
+    #whisper{
+      bottom:46%;
+    }
+    /* radio ticker likewise */
+    #radio-ticker{
+      bottom:44%;
+    }
+    /* interact prompt: between control zone and centre */
+    #interact-prompt{
+      bottom:44%;
+    }
+    /* bigmap overlay: fill screen normally, nothing changes */
+  }
+
+  /* ---------- HUD ---------- */
+  #hud{ position:fixed; inset:0; z-index:20; pointer-events:none; opacity:0; transition:opacity 1.2s ease; }
+  #hud.visible{ opacity:1; }
+
+  #top-bar{
+    position:absolute; top:calc(10px + var(--safe-t)); left:calc(14px + var(--safe-l)); right:calc(14px + var(--safe-r));
+    display:flex; justify-content:space-between; align-items:center; color:var(--bone);
+  }
+  #frag-counter{
+    font-size:.68rem; letter-spacing:.22em; opacity:.7; background:rgba(0,0,0,0.4);
+    padding:7px 14px 7px 12px; border:1px solid rgba(201,194,182,0.2); border-left:2px solid var(--rust);
+    font-variant-numeric:tabular-nums;
+  }
+  #icon-buttons{ display:flex; gap:8px; pointer-events:auto; position:relative; }
+
+  /* torn lined-paper treatment, same DNA as .mb-paper on the main menu
+     buttons - visible ruled-line texture (not the near-invisible one on
+     the synopsis panel), a torn irregular edge instead of a clean square,
+     and a small tape-scrap corner. Kept slightly less ornate than the
+     full-size menu buttons since these sit at 38px and need to stay
+     legible at a glance mid-gameplay, not just look right. */
+  .icon-btn{
+    position:relative; width:38px; height:38px; color:var(--bone); font-size:.9rem;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    background:none; border:none; transition:transform .06s ease;
+  }
+  .icon-btn::before{
+    content:''; position:absolute; inset:0; z-index:-1;
+    background:
+      radial-gradient(circle at 20% 15%, rgba(255,255,255,0.06) 0%, transparent 45%),
+      repeating-linear-gradient(2deg, rgba(255,255,255,0.07) 0px, transparent 1px, transparent 4px),
+      rgba(10,9,12,0.55);
+    border:1px solid rgba(201,194,182,0.24);
+    box-shadow:0 1px 0 rgba(255,255,255,0.04) inset, 0 4px 10px rgba(0,0,0,0.35);
+    clip-path: polygon(4% 8%, 88% 0%, 100% 14%, 96% 92%, 10% 100%, 0% 86%);
+    transition:border-color .2s ease, background .2s ease;
+  }
+  .icon-btn::after{
+    /* tape scrap corner */
+    content:''; position:absolute; top:-4px; left:8px; width:16px; height:8px;
+    background:rgba(201,194,182,0.16); border:1px solid rgba(201,194,182,0.2);
+    transform:rotate(-6deg); box-shadow:0 1px 3px rgba(0,0,0,0.3);
+  }
+  .icon-btn:hover::before{ border-color:rgba(201,194,182,0.5); }
+  .icon-btn:active{ transform:scale(0.94); }
+  .icon-btn.btn-corrupt{ animation: btnPressCorrupt .22s steps(2) 1; }
+  .icon-btn:focus-visible{ outline:none; }
+  .icon-btn:focus-visible::before{ border-color:rgba(201,194,182,0.75); }
+
+  /* ---------- SANITY VISUALIZATION: corrupting radio icon ----------
+     No meter anywhere - sanity is never shown as a number or a bar.
+     Instead the HUD radio icon itself degrades: --corrupt (0..1, driven
+     by updateSanityVisual() from state.sanity) fades the clean signal-wave
+     arcs out and bleeds in three horizontal static lines across the body,
+     desaturates and sours the icon's color the same violet-red the sky
+     curdles toward, and periodic short glitch-bursts (tickRadioGlitch())
+     shear/flash it - frequency and intensity both scale with corruption,
+     so a healthy player barely notices the icon while a near-gone one
+     sees their one piece of equipment visibly falling apart in real time. */
+  #radio-btn{ --corrupt:0; }
+  #radio-btn .radio-icon{
+    overflow:visible;
+    filter: saturate(calc(1 - var(--corrupt)*0.55)) hue-rotate(calc(var(--corrupt) * -34deg));
+    color: color-mix(in srgb, var(--bone) calc((1 - var(--corrupt)) * 100%), #c23a5a calc(var(--corrupt) * 100%));
+  }
+  #radio-btn .radio-wave{ transition: opacity .4s ease; opacity: calc(1 - var(--corrupt)*0.9); }
+  #radio-btn .radio-static .static-line{
+    stroke:#e2465f; stroke-width:1;
+    opacity: calc(var(--corrupt) * 0.8);
+    transition: opacity .3s ease;
+  }
+  @keyframes radioGlitchShift{
+    0%{ transform:translate(0,0) skewX(0deg); }
+    22%{ transform:translate(-1.1px,0.6px) skewX(3deg); }
+    46%{ transform:translate(1px,-0.5px) skewX(-4deg); }
+    70%{ transform:translate(-0.6px,0.5px) skewX(1deg); }
+    100%{ transform:translate(0,0) skewX(0deg); }
+  }
+  #radio-btn.signal-glitch .radio-icon{ animation: radioGlitchShift .18s steps(2); }
+  #radio-btn.signal-glitch .radio-wave{ opacity:.1; }
+  #radio-btn.signal-glitch .radio-static .static-line{ opacity:.9; }
+
+  #crosshair{
+    position:absolute; top:50%; left:50%; width:5px; height:5px; margin:-2.5px 0 0 -2.5px;
+    border-radius:50%; background:rgba(201,194,182,0.5);
+  }
+
+  #interact-prompt{
+    position:absolute; bottom:22%; left:50%; transform:translateX(-50%);
+    color:var(--bone); font-size:.7rem; letter-spacing:.24em; text-transform:uppercase; font-weight:700;
+    background:rgba(0,0,0,0.5); padding:9px 18px; border:1px solid rgba(201,194,182,0.3); border-top:2px solid var(--rust);
+    opacity:0; transition:opacity .25s ease; white-space:nowrap;
+  }
+  #interact-prompt.show{ opacity:1; }
+
+  #whisper{
+    position:absolute; top:38%; left:50%; transform:translateX(-50%);
+    color:var(--rust); font-family:var(--font-serif); font-style:italic; letter-spacing:.15em;
+    font-size:clamp(.8rem,3.4vw,1.1rem); opacity:0; text-shadow:0 0 14px rgba(122,31,31,0.6);
+    transition:opacity 1.4s ease; pointer-events:none; text-align:center; width:90%;
+  }
+  #whisper.show{ opacity:.85; }
+
+  /* joystick */
+  #joystick-zone{ position:absolute; left:0; bottom:0; width:42%; height:56%; pointer-events:auto; }
+  #joy-base{
+    position:absolute; width:96px; height:96px; border-radius:50%;
+    border:1px solid rgba(201,194,182,0.3); background:rgba(0,0,0,0.15); display:none;
+  }
+  #joy-knob{
+    position:absolute; width:42px; height:42px; border-radius:50%;
+    background:rgba(201,194,182,0.35); top:27px; left:27px; pointer-events:none;
+  }
+  #look-zone{ position:absolute; right:0; bottom:0; width:58%; height:56%; pointer-events:auto; }
+
+  #interact-btn{
+    position:absolute; right:calc(22px + var(--safe-r)); bottom:calc(30px + var(--safe-b));
+    width:74px; height:74px; border-radius:50%; pointer-events:auto;
+    color:var(--bone); display:flex; align-items:center; justify-content:center;
+    font-size:.62rem; letter-spacing:.15em; text-transform:uppercase; text-align:center;
+    opacity:.35; transition:opacity .2s ease, transform .06s ease;
+  }
+  /* circular, so the torn/jagged clip-path from the square icon buttons
+     doesn't translate here - kept round (better touch affordance) but
+     carries the same lined-paper fill + tape scrap so it still reads as
+     part of the same object language, not a leftover plain button. */
+  #interact-btn::before{
+    content:''; position:absolute; inset:0; z-index:-1; border-radius:50%;
+    background:
+      radial-gradient(circle at 30% 25%, rgba(255,255,255,0.06) 0%, transparent 50%),
+      repeating-linear-gradient(4deg, rgba(255,255,255,0.06) 0px, transparent 1px, transparent 4px),
+      rgba(0,0,0,0.35);
+    border:1px solid rgba(201,194,182,0.3);
+    box-shadow:0 1px 0 rgba(255,255,255,0.04) inset, 0 4px 12px rgba(0,0,0,0.35);
+    transition:background .2s ease, border-color .2s ease;
+  }
+  #interact-btn::after{
+    content:''; position:absolute; top:-4px; left:50%; transform:translateX(-50%) rotate(-4deg);
+    width:20px; height:9px; background:rgba(201,194,182,0.16); border:1px solid rgba(201,194,182,0.2);
+    box-shadow:0 1px 3px rgba(0,0,0,0.3);
+  }
+  #interact-btn.active{ opacity:1; }
+  #interact-btn.active::before{ background:
+      radial-gradient(circle at 30% 25%, rgba(255,255,255,0.08) 0%, transparent 50%),
+      repeating-linear-gradient(4deg, rgba(255,255,255,0.06) 0px, transparent 1px, transparent 4px),
+      rgba(122,31,31,0.35);
+    border-color:var(--rust); }
+  #interact-btn:active{ transform:scale(0.94); }
+  #interact-btn.btn-corrupt{ animation: btnPressCorrupt .22s steps(2) 1; }
+
+  /* vignette / dread overlay */
+  #vignette{
+    position:fixed; inset:0; z-index:15; pointer-events:none;
+    background:radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.85) 100%);
+    opacity:.55;
+  }
+  #dread-tint{
+    position:fixed; inset:0; z-index:16; pointer-events:none; background:rgba(90,10,10,0);
+    mix-blend-mode:multiply; transition:background .3s ease;
+  }
+  #lightning-flash{
+    position:fixed; inset:0; z-index:17; pointer-events:none; background:#dcd6ff; opacity:0;
+  }
+  #ending-screen{
+    position:fixed; inset:0; z-index:70; background:#000; color:var(--bone); display:none;
+    align-items:center; justify-content:center; flex-direction:column; text-align:center; padding:30px;
+    opacity:0; transition:opacity 2.5s ease;
+  }
+  #ending-screen.show{ display:flex; opacity:1; }
+  #ending-screen h2{ font-family:var(--font-serif); font-style:italic; font-size:clamp(1.1rem,4.5vw,1.6rem); letter-spacing:.08em; max-width:520px; line-height:1.8; opacity:.9; }
+  #ending-screen .small{ margin-top:26px; font-size:.65rem; letter-spacing:.25em; opacity:.4; text-transform:uppercase; }
+
+  /* ---------- INVENTORY / SYSTEMIC HUD ---------- */
+  .icon-btn.toggled::before{
+    background:
+      radial-gradient(circle at 20% 15%, rgba(255,255,255,0.06) 0%, transparent 45%),
+      repeating-linear-gradient(2deg, rgba(255,255,255,0.07) 0px, transparent 1px, transparent 4px),
+      rgba(122,31,31,0.4);
+    border-color:var(--rust);
+  }
+  .icon-btn.toggled{ color:#f0e6d8; }
+  .icon-btn.depleted{ opacity:.3; }
+  .icon-btn.locked{ opacity:.22; filter:grayscale(1); cursor:default; }
+
+  #compass-strip{
+    position:absolute; top:calc(52px + var(--safe-t)); left:50%; transform:translateX(-50%);
+    font-size:.64rem; letter-spacing:.34em; color:var(--bone); opacity:.5; font-weight:700;
+    background:rgba(0,0,0,0.35); padding:4px 14px; pointer-events:none; border-bottom:1px solid rgba(201,194,182,0.15);
+  }
+  #compass-strip.lying{ color:var(--rust); opacity:.7; }
+
+  /* ---------- MINIMAP ----------
+     Hidden until the radio tower is reached. Small radar-style circle,
+     top-right, showing roughly a 30m radius around the player. */
+  #minimap{
+    position:absolute; top:calc(14px + var(--safe-t)); right:calc(14px + var(--safe-r));
+    width:104px; height:104px; border-radius:50%; pointer-events:auto; cursor:pointer;
+    background:rgba(5,4,7,0.55); border:1px solid rgba(201,194,182,0.28);
+    opacity:0; transform:scale(.85); transition:opacity .6s ease, transform .6s ease;
+    box-shadow:0 0 18px rgba(0,0,0,0.5);
+  }
+  #minimap.visible{ opacity:1; transform:scale(1); }
+  #minimap canvas{ position:absolute; inset:0; width:100%; height:100%; border-radius:50%; pointer-events:none; }
+  #minimap::after{
+    content:'30m · tap to expand'; position:absolute; bottom:3px; left:50%; transform:translateX(-50%);
+    font-family:var(--font-mono); font-size:.42rem; letter-spacing:.08em; color:rgba(201,194,182,0.4);
+    white-space:nowrap;
+  }
+
+  /* ---------- BIG MAP OVERLAY ----------
+     Opened by tapping the radar. North-up (not rotated to player facing,
+     unlike the small live radar) so it reads as a real map, with named
+     landmarks and a fog-of-war layer over ground the player hasn't
+     actually walked near yet. */
+  #bigmap-overlay{
+    position:fixed; inset:0; z-index:80; background:rgba(4,3,5,0.92);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    opacity:0; pointer-events:none; transition:opacity .25s ease;
+  }
+  #bigmap-overlay.open{ opacity:1; pointer-events:auto; }
+  #bigmap-canvas{
+    width:min(88vw,520px); height:min(88vw,520px); border:1px solid rgba(201,194,182,0.28);
+    border-left:2px solid var(--rust); background:#08070a; touch-action:none;
+  }
+  #bigmap-title{
+    font-family:var(--font-headline); letter-spacing:.2em; font-size:.85rem; color:var(--bone);
+    text-transform:uppercase; margin-bottom:10px; opacity:.8;
+  }
+  #bigmap-close{
+    position:absolute; top:calc(18px + var(--safe-t)); right:calc(18px + var(--safe-r));
+    width:38px; height:38px; background:rgba(0,0,0,0.5); border:1px solid rgba(201,194,182,0.3);
+    color:var(--bone); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:1rem;
+  }
+  #bigmap-sub{ font-size:.6rem; opacity:.4; letter-spacing:.08em; margin-top:10px; font-style:italic; }
+
+  #radio-ticker{
+    position:absolute; bottom:calc(14px + var(--safe-b)); left:50%; transform:translateX(-50%);
+    max-width:88%; font-size:.64rem; letter-spacing:.14em; color:#a8c9c2; font-weight:700;
+    background:rgba(0,0,0,0.45); border:1px solid rgba(168,201,194,0.25); border-left:2px solid #a8c9c2; padding:7px 14px;
+    opacity:0; transition:opacity .5s ease; pointer-events:none; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #radio-ticker.show{ opacity:.85; }
+  #radio-ticker::before{ content:'WNCORE ▸ '; opacity:.7; }
+
+  .glitch-text{ animation:textGlitch .12s steps(2) 2; }
+  @keyframes textGlitch{ 0%{ transform:translate(0); } 50%{ transform:translate(1px,-1px); } 100%{ transform:translate(0); } }
+
+  /* ---------- RANSOM NOTE TEXT ----------
+     Each word gets a different typeface, size, and a slight rotation/
+     baseline offset, like it was cut from different newspapers and pasted
+     together. Used for the wake-up dialogue so the character's fractured
+     first thoughts literally look stitched from mismatched sources. */
+  .rn-word{ display:inline-block; white-space:pre; transform-origin:center center; will-change:transform; }
+  .rn-f0{ font-family:var(--font-serif); }
+  .rn-f1{ font-family:var(--font-type); }
+  .rn-f2{ font-family:var(--font-scrawl); }
+  .rn-f3{ font-family:var(--font-headline); text-transform:uppercase; }
+  .rn-f4{ font-family:var(--font-news); font-style:italic; }
+  .rn-f5{ font-family:var(--font-courier2); }
+  .rn-f6{ font-family:var(--font-mono); }
+  .rn-chip{
+    background:rgba(201,194,182,0.06); padding:1px 4px; margin:0 1px;
+    box-shadow:0 1px 2px rgba(0,0,0,0.4);
+  }
+
+  /* ---------- WAKE DIALOGUE ----------
+     A corrupted subtitle box that autoplays right after the eyes open -
+     the character's own thoughts arriving broken and mismatched. */
+  #wake-dialogue{
+    position:fixed; left:50%; bottom:16vh; transform:translateX(-50%);
+    max-width:88vw; min-width:200px; z-index:60;
+    padding:14px 22px; background:rgba(6,5,8,0.68);
+    border:1px solid rgba(201,194,182,0.22);
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+    opacity:0; pointer-events:none; transition:opacity .35s ease;
+    text-align:center;
+  }
+  #wake-dialogue.visible{ opacity:1; }
+  #wake-dialogue.glitch-burst{ filter:url(#chromaGlitch); animation:dialogueShake .22s linear; }
+  @keyframes dialogueShake{
+    0%{ transform:translateX(-50%) translate(0,0); }
+    25%{ transform:translateX(-50%) translate(-3px,1px); }
+    50%{ transform:translateX(-50%) translate(2px,-1px); }
+    75%{ transform:translateX(-50%) translate(-2px,0); }
+    100%{ transform:translateX(-50%) translate(0,0); }
+  }
+  #wake-dialogue-text{
+    font-family:var(--font-mono); font-size:clamp(1rem,4.4vw,1.3rem);
+    letter-spacing:.02em; color:var(--bone); min-height:1.5em; line-height:1.5;
+  }
+  #wake-dialogue-cursor{ display:inline-block; width:2px; height:1em; background:var(--bone); vertical-align:-0.15em; margin-left:2px; animation:cursorBlink .8s steps(1) infinite; }
+  @keyframes cursorBlink{ 0%,49%{opacity:1;} 50%,100%{opacity:0;} }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute;pointer-events:none">
+  <filter id="chromaGlitch" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+    <feOffset in="SourceGraphic" dx="-1" dy="0" result="rOff"/>
+    <feColorMatrix in="rOff" type="matrix"
+      values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="rChan"/>
+    <feColorMatrix in="SourceGraphic" type="matrix"
+      values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="gChan"/>
+    <feOffset in="SourceGraphic" dx="1" dy="0" result="bOff"/>
+    <feColorMatrix in="bOff" type="matrix"
+      values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="bChan"/>
+    <feBlend in="rChan" in2="gChan" mode="screen" result="rg"/>
+    <feBlend in="rg" in2="bChan" mode="screen" result="split"/>
+    <feTurbulence type="fractalNoise" baseFrequency="0 0.015" numOctaves="1" seed="4" result="tearNoise"/>
+    <feDisplacementMap in="split" in2="tearNoise" scale="0" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+  <filter id="voidWarp" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.008 0.011" numOctaves="2" seed="7" result="warpNoise"/>
+    <feDisplacementMap in="SourceGraphic" in2="warpNoise" scale="34" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
+<canvas id="game-canvas"></canvas>
+
+<div id="autosave-indicator">
+  <svg viewBox="0 0 40 24" width="40" height="24">
+    <rect x="1" y="9" width="38" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1"/>
+    <g class="reel reel-l">
+      <circle cx="10" cy="12.5" r="6.2" fill="none" stroke="currentColor" stroke-width="1"/>
+      <line x1="10" y1="7.3" x2="10" y2="17.7" stroke="currentColor" stroke-width="1"/>
+      <line x1="5.3" y1="12.5" x2="14.7" y2="12.5" stroke="currentColor" stroke-width="1"/>
+    </g>
+    <g class="reel reel-r">
+      <circle cx="30" cy="12.5" r="6.2" fill="none" stroke="currentColor" stroke-width="1"/>
+      <line x1="30" y1="7.3" x2="30" y2="17.7" stroke="currentColor" stroke-width="1"/>
+      <line x1="25.3" y1="12.5" x2="34.7" y2="12.5" stroke="currentColor" stroke-width="1"/>
+    </g>
+  </svg>
+  <span>saving</span>
+  <div id="autosave-hint">this is your progress autosaving</div>
+</div>
+
+<div id="eyelids"><div class="eyelid eyelid-top"></div><div class="eyelid eyelid-bottom"></div></div>
+
+<div id="title-screen">
+  <div id="menu-breakdown-overlay"></div>
+  <div id="title-void">
+    <div class="v-layer v-disk"></div>
+    <div class="v-layer v-disk2"></div>
+    <div class="v-layer v-mask"></div>
+    <div class="v-layer v-ring"></div>
+    <div class="v-layer v-grain" id="title-void-grain"></div>
+  </div>
+  <div id="title-logo">
+    <h1 class="flicker">ANOTHER SKY</h1>
+    <p id="title-sub">four years. maybe more.</p>
+  </div>
+  <div id="main-menu">
+    <button class="menu-btn" id="menu-remember"><i class="mb-paper"></i>Remember<span class="mb-sub">new game</span></button>
+    <button class="menu-btn disabled" id="menu-regain"><i class="mb-paper"></i>Regain<span class="mb-sub">continue</span></button>
+    <button class="menu-btn" id="menu-settings"><i class="mb-paper"></i>Settings</button>
+    <button class="menu-btn" id="menu-credits"><i class="mb-paper"></i>Credits</button>
+    <div id="menu-flavor"></div>
+  </div>
+  <div id="settings-overlay">
+    <div class="panel-box">
+      <div class="panel-title">Settings</div>
+      <div class="panel-row">
+        <label><span>Camera Sensitivity</span><span id="settings-sens-val" class="live-val">100%</span></label>
+        <div class="slider-wrap">
+          <input type="range" id="settings-sens" min="20" max="220" value="100" />
+          <span class="slider-drip"></span>
+        </div>
+      </div>
+      <div class="panel-row">
+        <label><span>Volume</span><span id="settings-vol-val" class="live-val">55%</span></label>
+        <div class="slider-wrap">
+          <input type="range" id="settings-vol" min="0" max="100" value="55" />
+          <span class="slider-drip"></span>
+        </div>
+      </div>
+      <div class="panel-row">
+        <label><span>Brightness</span><span id="settings-bright-val" class="live-val">100%</span></label>
+        <div class="slider-wrap">
+          <input type="range" id="settings-bright" min="60" max="140" value="100" />
+          <span class="slider-drip"></span>
+        </div>
+      </div>
+      <div class="panel-row">
+        <label><span>Resolution</span></label>
+        <select class="panel-select" id="settings-res">
+          <option value="1">Native</option>
+          <option value="0.85">High</option>
+          <option value="0.65">Medium</option>
+          <option value="0.5">Low</option>
+        </select>
+      </div>
+      <div class="toggle-row">
+        <label>Mute All Audio</label>
+        <span class="toggle-switch">
+          <input type="checkbox" id="settings-mute" />
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </span>
+      </div>
+      <div class="toggle-row">
+        <label>Invert Look (Y-Axis)</label>
+        <span class="toggle-switch">
+          <input type="checkbox" id="settings-invert-y" />
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </span>
+      </div>
+      <div class="toggle-row">
+        <label>Vibration (Touch)</label>
+        <span class="toggle-switch">
+          <input type="checkbox" id="settings-vibration" checked />
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </span>
+      </div>
+      <button class="panel-select" id="settings-fullscreen" style="cursor:pointer;text-align:center;margin-bottom:20px;">Enter Fullscreen</button>
+      <button class="danger-btn" id="settings-delete-save">Delete Memories (erase save)</button>
+      <button class="panel-close" id="settings-close">Close</button>
+    </div>
+  </div>
+  <div id="credits-overlay">
+    <div id="credits-viewport">
+      <div id="credits-crawl">
+        <div class="credits-block credits-block-title">
+          <div class="credits-logo">ANOTHER SKY</div>
+          <div class="credits-tag">four years. maybe more.</div>
+        </div>
+
+        <div class="credits-block">
+          <div class="credits-heading">Directed &amp; Written By</div>
+          <div class="credit-row center"><span class="redacted" data-text="████████ ███████"></span></div>
+        </div>
+
+        <div class="credits-block">
+          <div class="credits-heading">Development</div>
+          <div class="credit-row"><span class="credit-role">Game Director</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-row"><span class="credit-role">Lead Designer</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-row"><span class="credit-role">Engine Programmer</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-row"><span class="credit-role">Gameplay Programmer</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-row"><span class="credit-role">Systems Programmer</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-row"><span class="credit-role">Technical Director</span><span class="redacted" data-text="████████"></span></div>
+        </div>
+
+        <div class="credits-block">
+          <div class="credits-heading">Narrative</div>
+          <div class="credit-row"><span class="credit-role">Writer</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-row"><span class="credit-role">Additional Writing</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-row"><span class="credit-role">Lore &amp; Worldbuilding</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-row"><span class="credit-role">WNCORE Field Logs</span><span class="redacted" data-text="████████"></span></div>
+        </div>
+
+        <div class="credits-block">
+          <div class="credits-heading">Art &amp; Visual Design</div>
+          <div class="credit-row"><span class="credit-role">Art Director</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-row"><span class="credit-role">Environment Art</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-role-only">Safehouse &amp; interiors</div>
+          <div class="credit-role-only">Downtown block-out</div>
+          <div class="credit-role-only">Sky &amp; wrongness shaders</div>
+          <div class="credit-row"><span class="credit-role">UI / UX Design</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-row"><span class="credit-role">Shader Programming</span><span class="redacted" data-text="████████"></span></div>
+        </div>
+
+        <div class="credits-block">
+          <div class="credits-heading">Audio</div>
+          <div class="credit-row"><span class="credit-role">Sound Design</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-row"><span class="credit-role">Procedural Ambience</span><span class="redacted" data-text="████████"></span></div>
+          <div class="credit-row"><span class="credit-role">Radio Sequence Audio</span><span class="redacted" data-text="████████"></span></div>
+        </div>
+
+        <div class="credits-block">
+          <div class="credits-heading">WNCORE Ecosystem</div>
+          <div class="credit-role-only">wncore-radio.vercel.app</div>
+          <div class="credit-role-only">siharu.vercel.app</div>
+          <div class="credit-role-only">flowchart intel network</div>
+          <div class="credit-row"><span class="credit-role">ARG Design</span><span class="redacted" data-text="████████"></span></div>
+        </div>
+
+        <div class="credits-block">
+          <div class="credits-heading">Quality Assurance</div>
+          <div class="credit-role-only">it has not been fully tested</div>
+          <div class="credit-role-only">it may never be fully tested</div>
+          <div class="credit-role-only">that is also a kind of truth</div>
+        </div>
+
+        <div class="credits-block">
+          <div class="credits-heading">Special Thanks</div>
+          <div class="credit-role-only">everyone who kept the signal alive</div>
+          <div class="credit-role-only">everyone who forgot and came back anyway</div>
+          <div class="credit-role-only">the ghuuls, for integrating first</div>
+        </div>
+
+        <div class="credits-block">
+          <div class="credits-heading">In Memoriam</div>
+          <div class="credit-row"><span class="credit-role">Nine Names</span><span class="redacted" data-text="████ ████ ████"></span></div>
+          <div class="credit-role-only">you should remember them</div>
+        </div>
+
+        <div class="credits-block">
+          <div class="credits-heading">Built With</div>
+          <div class="credit-role-only">Three.js</div>
+          <div class="credit-role-only">a single html file</div>
+          <div class="credit-role-only">too much coffee, not enough sleep</div>
+        </div>
+
+        <div class="credits-block credits-block-final">
+          <div class="credit-row center"><span class="credit-role">Player</span></div>
+          <div class="credit-row center"><span class="credit-real">Siharu</span></div>
+          <div class="credits-tag" style="margin-top:26px;">the sky is still listening.</div>
+        </div>
+      </div>
+    </div>
+    <div id="credits-version"></div>
+    <button class="panel-close" id="credits-close">Close</button>
+  </div>
+
+  <div id="pause-overlay">
+    <svg id="pause-svg" viewBox="0 0 360 610" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <path id="tornBtnShape" d="M4,2 L256,0 L260,10 L258,42 L252,50 L6,48 L0,40 L2,8 Z"></path>
+      </defs>
+      <!-- torn-paper panel body -->
+      <path d="M10,18 L340,6 L352,42 L349,540 L322,576 L20,569 L6,530 L14,42 Z" class="pause-panel-bg"></path>
+      <!-- tape scrap -->
+      <rect x="150" y="-6" width="60" height="18" transform="rotate(-3 180 3)" class="pause-tape"></rect>
+
+      <text x="180" y="60" text-anchor="middle" class="pause-title">MENU</text>
+      <text x="180" y="82" text-anchor="middle" class="pause-sub">the world doesn't wait for you to read this.</text>
+
+      <g class="svg-menu-btn" id="pause-resume" tabindex="0" role="button" transform="translate(50,112)">
+        <use href="#tornBtnShape" width="260" height="50"></use>
+        <text x="130" y="31" text-anchor="middle">Resume</text>
+      </g>
+      <g class="svg-menu-btn" id="pause-memories" tabindex="0" role="button" transform="translate(50,174)">
+        <use href="#tornBtnShape" width="260" height="50"></use>
+        <text x="130" y="31" text-anchor="middle">Memories</text>
+      </g>
+      <g class="svg-menu-btn" id="pause-radiolog" tabindex="0" role="button" transform="translate(50,236)">
+        <use href="#tornBtnShape" width="260" height="50"></use>
+        <text x="130" y="31" text-anchor="middle">Radio Log</text>
+      </g>
+      <g class="svg-menu-btn" id="pause-inventory" tabindex="0" role="button" transform="translate(50,298)">
+        <use href="#tornBtnShape" width="260" height="50"></use>
+        <text x="130" y="31" text-anchor="middle">Inventory</text>
+      </g>
+      <g class="svg-menu-btn" id="pause-help" tabindex="0" role="button" transform="translate(50,360)">
+        <use href="#tornBtnShape" width="260" height="50"></use>
+        <text x="130" y="31" text-anchor="middle">Help</text>
+      </g>
+      <g class="svg-menu-btn" id="pause-settings" tabindex="0" role="button" transform="translate(50,422)">
+        <use href="#tornBtnShape" width="260" height="50"></use>
+        <text x="130" y="31" text-anchor="middle">Settings</text>
+      </g>
+
+      <text x="180" y="500" text-anchor="middle" class="svg-footer-link" id="pause-load" tabindex="0" role="button">Load Last Save</text>
+      <text x="180" y="524" text-anchor="middle" class="svg-footer-link danger" id="pause-quit" tabindex="0" role="button">Quit to Title</text>
+
+      <text x="180" y="556" text-anchor="middle" id="pause-flavor" class="pause-flavor"></text>
+    </svg>
+  </div>
+
+  <div id="memories-overlay">
+    <div class="panel-box panel-box-tall">
+      <div class="panel-title">Memories</div>
+      <div class="panel-sub" id="memories-progress">0 / 12 remembered</div>
+      <div class="panel-scroll" id="memories-list"></div>
+      <button class="panel-close" id="memories-close">Close</button>
+    </div>
+  </div>
+
+  <div id="radiolog-overlay">
+    <div class="panel-box panel-box-tall">
+      <div class="panel-title">Radio Log</div>
+      <div class="panel-sub">last transmissions received</div>
+      <div class="panel-scroll" id="radiolog-list"></div>
+      <button class="panel-close" id="radiolog-close">Close</button>
+    </div>
+  </div>
+
+  <div id="inventory-overlay">
+    <div class="panel-box">
+      <div class="panel-title">Inventory</div>
+      <div class="panel-scroll" id="inventory-list"></div>
+      <button class="panel-close" id="inventory-close">Close</button>
+    </div>
+  </div>
+
+  <div id="help-overlay">
+    <div class="panel-box panel-box-tall">
+      <div class="panel-title">Help</div>
+      <div class="panel-scroll" id="help-content"></div>
+      <button class="panel-close" id="help-close">Close</button>
+    </div>
+  </div>
+
+  <div id="title-menu">
+    <div id="title-setup">
+      <span class="setup-tag">// WNCORE field log — entry 0</span>
+      It's been <em>four years</em> since the sky broke open over Kathmandu
+      and the rain came down wrong. Not weather. A <em>wound</em>.
+      <br><br>
+      You've been asleep since then — or something like asleep.
+      Nine people you knew are gone from every record that should hold them.
+      You don't remember their names. You <em>should</em> remember their names.
+      <br><br>
+      Somewhere out there, a relay tower is still broadcasting.
+      Find the signal. Find the photographs. Find what was taken from you.
+      <br><br>
+      <em>Don't look at what's in the rain.</em>
+    </div>
+    <button id="begin-btn">open your eyes</button>
+  </div>
+</div>
+<div id="title-frame"><i></i></div>
+<div id="title-grain"></div>
+
+<div id="rotate-overlay">
+  <div class="icon">⟳</div>
+  <p>turn your device to see the sky</p>
+</div>
+
+<div id="wake-dialogue"><div id="wake-dialogue-text"></div></div>
+
+<div id="hud">
+  <div id="top-bar">
+    <div>
+    </div>
+    <div id="icon-buttons">
+      <div class="icon-btn locked" id="radio-btn" title="radio">
+        <svg class="radio-icon" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <rect class="radio-body" x="4" y="10" width="15" height="9" rx="1.2"></rect>
+          <line class="radio-antenna" x1="15" y1="10" x2="19.5" y2="2.5"></line>
+          <circle class="radio-dial" cx="8" cy="14.5" r="1.15" fill="currentColor" stroke="none"></circle>
+          <path class="radio-wave radio-wave-1" d="M11 7.3 Q13 5.2 15.6 6.3"></path>
+          <path class="radio-wave radio-wave-2" d="M9.3 5.2 Q13.2 1.9 17.8 4.2"></path>
+          <g class="radio-static">
+            <line x1="5.2" y1="12" x2="17.8" y2="12" class="static-line"></line>
+            <line x1="5.2" y1="14.5" x2="17.8" y2="14.5" class="static-line"></line>
+            <line x1="5.2" y1="17" x2="17.8" y2="17" class="static-line"></line>
+          </g>
+        </svg>
+      </div>
+      <div class="icon-btn" id="pause-btn" title="menu">☰</div>
+    </div>
+  </div>
+  <div id="compass-strip">N</div>
+  <div id="minimap"><canvas id="minimap-canvas" width="104" height="104"></canvas></div>
+
+  <div id="bigmap-overlay">
+    <div id="bigmap-close">✕</div>
+    <div id="bigmap-title">Another Sky — Charted Ground</div>
+    <canvas id="bigmap-canvas" width="640" height="640"></canvas>
+    <div id="bigmap-sub">only the ground you've actually walked is charted.</div>
+  </div>
+  <div id="crosshair"></div>
+  <div id="whisper"></div>
+  <div id="radio-ticker"></div>
+  <div id="interact-prompt"></div>
+  <div id="joystick-zone">
+    <div id="joy-base"><div id="joy-knob"></div></div>
+  </div>
+  <div id="look-zone"></div>
+  <div id="interact-btn">◎</div>
+</div>
+
+<div id="vignette"></div>
+<div id="dread-tint"></div>
+<div id="lightning-flash"></div>
+<div id="ending-screen">
+  <h2 id="ending-text"></h2>
+  <div class="small">tap to close your eyes again</div>
+</div>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+<!-- ?v=X query string busts browser caching of stale JS after a deploy -
+     bump this alongside GAME_VERSION in core/state.js on every release.
+     Has to be a hardcoded literal here (not read from state.js) since
+     this tag is what loads state.js in the first place - no way to ask
+     the JS what its own version is before the JS has loaded. -->
+<script type="module" src="src/main.js?v=0.1.0"></script>
+</body>
+</html>
