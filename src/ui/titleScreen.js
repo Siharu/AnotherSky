@@ -106,6 +106,7 @@ function isMainMenuIdleEligible(){
         && titleScreen.style.display !== 'none'
         && !menuBreakdownActive;
   } catch (e) {
+    console.error('[DIAG isMainMenuIdleEligible]', e);
     return false;
   }
 }
@@ -131,7 +132,7 @@ export function tickMenuIdle(){
       triggerMenuBreakdown();
     }
   } catch (e) {
-    // fail soft - see comment above
+    console.error('[DIAG tickMenuIdle]', e);
   }
 }
 function triggerMenuBreakdown(){
