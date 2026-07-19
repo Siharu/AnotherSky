@@ -83,17 +83,31 @@ function resetMenuIdle(){ menuIdleSince = performance.now(); }
   if(titleScreen) titleScreen.addEventListener(evt, resetMenuIdle, { passive:true });
 });
 function isMainMenuIdleEligible(){
-  // Defensive - see docs/HANDOFF.md HOTFIX #2. In normal browser load
-  // order this is always non-null by the time animate() calls into this
-  // (deferred module scripts run after DOM parsing), but fail soft
-  // instead of throwing if that guarantee is ever violated.
-  if(!titleScreen) return false;
-  // only while the actual button menu is up - not mid-synopsis/setup, and
-  // not after the title screen has already started fading for gameplay
-  return titleScreen.classList.contains('show-menu')
-      && !titleScreen.classList.contains('show-setup')
-      && titleScreen.style.display !== 'none'
-      && !menuBreakdownActive;
+  // Defensive - see docs/HANDOFF.md HOTFIX #2 and HOTFIX #3. In normal
+  // browser load order this is always initialized by the time animate()
+  // calls into this (deferred module scripts run after DOM parsing), but
+  // fail soft instead of throwing if that guarantee is ever violated.
+  //
+  // HOTFIX #3: the `if(!titleScreen)` check above (HOTFIX #2) only guards
+  // against `titleScreen` being null (element missing from the DOM) - it
+  // does NOT guard against a module load-order race (this file's
+  // circular import with main.js, see file header) where `titleScreen`
+  // itself hasn't been initialized yet, because reading a not-yet-
+  // initialized `const`/`let` throws a TDZ ReferenceError on the read
+  // itself, before `!` or `if` ever get to evaluate anything. A
+  // truthiness check can't fail soft against that - only try/catch can.
+  try {
+    // only while the actual button menu is up - not mid-synopsis/setup,
+    // and not after the title screen has already started fading for
+    // gameplay
+    return !!titleScreen
+        && titleScreen.classList.contains('show-menu')
+        && !titleScreen.classList.contains('show-setup')
+        && titleScreen.style.display !== 'none'
+        && !menuBreakdownActive;
+  } catch (e) {
+    return false;
+  }
 }
 export function tickMenuIdle(){
   if(!isMainMenuIdleEligible()){ menuIdleSince = null; return; }
