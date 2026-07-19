@@ -21,12 +21,27 @@
 // stopMenuAmbience() (menu.js's procedural audio bed, still main.js-
 // local). None of those are title-screen concerns themselves - they're
 // radio/dialogue/ambience concerns that haven't been pulled into their
-// own modules yet - so this is a live circular import (main.js imports
-// titleScreenActive/tickMenuIdle from here; this file imports those three
-// back from main.js), same shape sky/weather.js and safehouse.js already
-// use for the same reason. Revisit when radio/dialogue/menu-ambience get
-// their own modules - at that point this import should point there
-// instead of at main.js.
+// own modules yet.
+//
+// HOTFIX #5 (see docs/HANDOFF.md): these used to come in via a *static*
+// `import {...} from '../main.js'` here, forming a real circular import
+// (main.js imports tickMenuIdle/setTitleScreenActive from this file;
+// this file imported back from main.js). Under plain browser ESM that
+// resolves fine because dependency evaluation completes depth-first
+// before either module's own top-level code runs - but under a dev
+// server that instruments/wraps modules for HMR (Vite and similar),
+// circular ESM cycles commonly do NOT get the same guarantee, and the
+// cycle became a *permanent* TDZ instead of a same-frame quirk: every
+// single call to tickMenuIdle() threw `Cannot access '<binding>' before
+// initialization`, every frame, forever (HOTFIX #2-4 kept patching the
+// symptom one binding at a time, then wrapping the whole function in
+// try/catch - which "fixed" the crash but meant a real exception was
+// being thrown and swallowed 60x/sec, which is exactly why the game
+// became unplayably laggy instead of merely broken). The actual fix is
+// below: this file no longer has ANY static import from main.js, so
+// main.js -> titleScreen.js is one-way and the cycle is gone entirely.
+// main.js instead calls registerMainRefs(...) once, after these values
+// exist, to hand them in explicitly.
 //
 // DOM refs (titleScreen/titleFrame/titleGrain/hud/eyelids) are resolved
 // locally via getElementById rather than imported - main.js's own copies
@@ -40,10 +55,26 @@ import { getAudioCtx, initAudio } from '../systems/audio.js';
 import { userVolume } from '../systems/settings.js';
 import { SAFEHOUSE_DOOR_YAW } from '../world/safehouse.js';
 import { groundHeightAt } from '../world/terrain.js';
-import {
-  radioPickupMesh, RADIO_PICKUP_POS, RADIO_FLOAT_HEIGHT,
-  playWakeDialogue, stopMenuAmbience
-} from '../main.js';
+
+// See HOTFIX #5 above: these come in via registerMainRefs(), called once
+// from main.js after the real values exist, instead of a static import
+// back into main.js. getRadioPickupMesh is a function (not a plain value)
+// because radioPickupMesh is reassigned repeatedly over the life of the
+// game (built once, nulled on pickup, etc.) - a snapshot taken at
+// registration time would go stale, so we call through to main.js's
+// current value each time instead.
+let getRadioPickupMesh = () => null;
+let _RADIO_PICKUP_POS = null;
+let _RADIO_FLOAT_HEIGHT = 0;
+let _playWakeDialogue = () => {};
+let _stopMenuAmbience = () => {};
+export function registerMainRefs(refs){
+  getRadioPickupMesh = refs.getRadioPickupMesh;
+  _RADIO_PICKUP_POS = refs.RADIO_PICKUP_POS;
+  _RADIO_FLOAT_HEIGHT = refs.RADIO_FLOAT_HEIGHT;
+  _playWakeDialogue = refs.playWakeDialogue;
+  _stopMenuAmbience = refs.stopMenuAmbience;
+}
 
 const $ = id => document.getElementById(id);
 const titleScreen = $('title-screen');
@@ -106,7 +137,6 @@ function isMainMenuIdleEligible(){
         && titleScreen.style.display !== 'none'
         && !menuBreakdownActive;
   } catch (e) {
-    console.error('[DIAG isMainMenuIdleEligible]', e);
     return false;
   }
 }
@@ -132,7 +162,9 @@ export function tickMenuIdle(){
       triggerMenuBreakdown();
     }
   } catch (e) {
-    console.error('[DIAG tickMenuIdle]', e);
+    // fail soft - see comment above. Should no longer fire in practice
+    // now that the circular import (HOTFIX #5) is gone; kept as a safety
+    // net, not a fix in itself.
   }
 }
 function triggerMenuBreakdown(){
@@ -264,7 +296,7 @@ function playWakeFallSound(){
 $('begin-btn').addEventListener('click', ()=>{
   const btn = $('begin-btn');
   btn.disabled = true;
-  stopMenuAmbience();
+  _stopMenuAmbience();
   initAudio(userVolume);
   { const ac = getAudioCtx(); if(ac && ac.state==='suspended') ac.resume(); }
   playWakeFallSound();
@@ -361,14 +393,14 @@ $('begin-btn').addEventListener('click', ()=>{
       // of wherever the parse-time placeholder angle happened to land -
       // player wakes up facing away from it and has to turn to find it,
       // rather than it being the first thing in view.
-      if(radioPickupMesh){
+      if(getRadioPickupMesh()){
         const ang = state.yaw + Math.PI + (Math.random()*0.5 - 0.25);
         const dist = 3.2 + Math.random()*1.2;
-        RADIO_PICKUP_POS.x = state.playerX - Math.sin(ang)*dist;
-        RADIO_PICKUP_POS.z = state.playerZ - Math.cos(ang)*dist;
-        const ry = groundHeightAt(RADIO_PICKUP_POS.x, RADIO_PICKUP_POS.z) + RADIO_FLOAT_HEIGHT;
-        radioPickupMesh.position.set(RADIO_PICKUP_POS.x, ry, RADIO_PICKUP_POS.z);
+        _RADIO_PICKUP_POS.x = state.playerX - Math.sin(ang)*dist;
+        _RADIO_PICKUP_POS.z = state.playerZ - Math.cos(ang)*dist;
+        const ry = groundHeightAt(_RADIO_PICKUP_POS.x, _RADIO_PICKUP_POS.z) + _RADIO_FLOAT_HEIGHT;
+        getRadioPickupMesh().position.set(_RADIO_PICKUP_POS.x, ry, _RADIO_PICKUP_POS.z);
       }
-      playWakeDialogue();
+      _playWakeDialogue();
     });
 });

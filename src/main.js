@@ -60,7 +60,7 @@ import {
   pauseOverlay, isGameplayActive, pauseMenuOpen,
   openPauseMenu, closePauseMenu, pauseFlavor
 } from './ui/menu.js';
-import { setTitleScreenActive, tickMenuIdle } from './ui/titleScreen.js';
+import { setTitleScreenActive, tickMenuIdle, registerMainRefs } from './ui/titleScreen.js';
 import { updateDread } from './systems/dread.js';
 import { updatePlayer } from './entities/player.js';
 import { pickFrom } from './utils/math.js';
@@ -1586,6 +1586,22 @@ export const RADIO_FLOAT_HEIGHT = 1.25;
   scene.add(group);
   radioPickupMesh = group;
 }
+// Hands these into titleScreen.js explicitly instead of it statically
+// importing them back from here - see HOTFIX #5 in titleScreen.js's file
+// header for why the old circular import was the actual cause of the
+// severe frame-rate-killing lag (a permanent TDZ under dev-server module
+// handling, not just a rare race under plain static hosting).
+// getRadioPickupMesh is a function, not the value itself, because
+// radioPickupMesh is reassigned repeatedly below (collectRadio() etc.) -
+// titleScreen.js needs the current value whenever it's actually read
+// (at wake-up), not a stale snapshot from this line.
+registerMainRefs({
+  getRadioPickupMesh: () => radioPickupMesh,
+  RADIO_PICKUP_POS,
+  RADIO_FLOAT_HEIGHT,
+  playWakeDialogue,
+  stopMenuAmbience
+});
 let radioFloatCommented = false;
 let radioFloatCooldown = 0;
 function updateRadioPickup(dt){
