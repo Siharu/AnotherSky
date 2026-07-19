@@ -60,7 +60,7 @@ import {
   pauseOverlay, isGameplayActive, pauseMenuOpen,
   openPauseMenu, closePauseMenu, pauseFlavor
 } from './ui/menu.js';
-import { titleScreenActive, setTitleScreenActive, tickMenuIdle } from './ui/titleScreen.js';
+import { setTitleScreenActive, tickMenuIdle } from './ui/titleScreen.js';
 import { updateDread } from './systems/dread.js';
 import { updatePlayer } from './entities/player.js';
 import { pickFrom } from './utils/math.js';
@@ -2686,8 +2686,8 @@ let titleCamYaw = Math.PI * 0.15;
 // camera silently drifted to the orbit shot behind the overlay - so
 // closing the bigmap (or, worse, the ending sequence) left the camera
 // somewhere the player never pointed it.
-// titleScreenActive now lives in ui/titleScreen.js (Wave 3 - see
-// docs/HANDOFF.md), imported at top-level.
+// state.titleScreenActive lives in core/state.js (moved off a bare `let`
+// export in ui/titleScreen.js - see the comment there for why).
 function updateTitleCam(dt){
   titleCamYaw += dt*0.025;
   const orbitR = 2.2;
@@ -2745,7 +2745,7 @@ function animate(){
     updateDust(dt);
     updateRain(dt);
     updateLamps(dt);
-    if(titleScreenActive) updateTitleCam(dt);
+    if(state.titleScreenActive) updateTitleCam(dt);
     tickMenuIdle();
   }
 

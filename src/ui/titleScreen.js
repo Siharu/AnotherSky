@@ -51,8 +51,13 @@ const titleFrame = $('title-frame');
 const titleGrain = $('title-grain');
 const hud = $('hud');
 
-export let titleScreenActive = true;
-export function setTitleScreenActive(v){ titleScreenActive = v; }
+// titleScreenActive lives on `state` (core/state.js), not as a bare `let`
+// export from this file - see the comment on state.titleScreenActive for
+// why (this file's real, currently-unavoidable circular import back to
+// main.js made a `let` export's live binding fragile; plain state-object
+// property reads have no TDZ regardless of which module in the cycle
+// evaluates first).
+export function setTitleScreenActive(v){ state.titleScreenActive = v; }
 
 /* ---------- MENU BREAKDOWN (idle glitch event) ----------
    If the player just sits at the main menu doing nothing for a while, the

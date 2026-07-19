@@ -4571,3 +4571,59 @@ never seen firing in sequence, the answering machine's position-relative-
 to-fragment-14 placement is computed correctly by reading the code but
 not seen in-world, and the blink timing/prop scale are first-pass
 numbers.
+
+---
+
+## HOTFIX: `Cannot access 'titleScreenActive' before initialization` crashing every frame in the real browser
+
+First real browser run (via the Codespaces deploy script) surfaced a
+crash the two static-analysis passes above couldn't catch:
+`main.js:2748 Uncaught ReferenceError: Cannot access 'titleScreenActive'
+before initialization`, thrown on literally every `animate()` frame -
+game never rendered.
+
+**Cause:** `ui/titleScreen.js` had `export let titleScreenActive = true`
+plus a documented, deliberate circular import back to `main.js`
+(`radioPickupMesh`, `playWakeDialogue`, `stopMenuAmbience`, etc. - same
+shape `sky/weather.js` and `safehouse.js` already use). `let`/`const`
+module exports are live bindings with a temporal-dead-zone until their
+declaration line actually executes - fine for functions (hoisted, always
+safe) but fragile for a bare `let` sitting in a cycle, since which module
+"wins" the race to fully evaluate first depends on import graph
+specifics that are easy to get wrong and, apparently, easy to break
+without any static tool noticing (neither `node --check` nor a Node
+`import()` catch this, since Node's DOM-less environment throws its own
+earlier, unrelated error before ever reaching this code path - see the
+Codespaces-deploy round's notes on the same limitation).
+
+**Fix:** moved the flag onto `state.titleScreenActive` (`core/state.js`)
+instead of a bare module-level `let`. Plain object-property reads have no
+TDZ, so this is immune to import-order timing regardless of how the
+cycle resolves. `setTitleScreenActive(v)` in `titleScreen.js` now just
+does `state.titleScreenActive = v` (function declarations are hoisted
+and always safe to export from a cycle, so the setter itself was never
+the problem - only the raw `let` export was). `main.js` now reads
+`state.titleScreenActive` directly instead of importing the value
+binding.
+
+**Audited the rest of the codebase for the same shape** (`grep -rn
+"^export let " src/`): `ui/menu.js`'s `pauseMenuOpen` and
+`systems/settings.js`'s several `export let`s are also read via live
+binding from `main.js`, but neither of those two files imports anything
+from `main.js` (verified: `menu.js` has zero imports, `settings.js`
+imports from `core/scene.js`/`core/state.js`/`systems/audio.js`/
+`systems/save.js`/`ui/menu.js` only) - no cycle, so no TDZ risk there.
+`main.js`'s own `export let radioPickupMesh, radioPickupLight` is
+imported back by `titleScreen.js` (the same cycle), but only ever read
+inside `titleScreen.js`'s own functions, never at that module's top
+level, so it wasn't observed to be broken - **worth treating as a latent
+risk of the same class if anything about this cycle's import order
+changes again**, and the state-object pattern above is the fix to reach
+for if it ever does.
+
+**Verification:** `node docs/smoketest.js` clean. `node --check` clean
+on every touched file. Real dynamic `import('./main.js')` still resolves
+cleanly (fails only on the expected DOM-less `document is not defined`).
+**Still not live-tested by me** - this fix is reasoned from the actual
+error message and ES module TDZ semantics, but needs a real
+redeploy-and-reload to confirm the title screen now renders.

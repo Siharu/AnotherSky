@@ -51,6 +51,19 @@ const state = {
   nearLockedDoor:false,          // safehouse locked room door - see tryInteract()/showLineBox
   nearBedTable:false,            // bedside table in the safehouse - checkable once the key quest starts
   nearAnsweringMachine:false,    // answering machine prop near lore fragment #14 ("The Choir") - Beat 5's 999 device
+  // Was a bare `export let titleScreenActive` in ui/titleScreen.js. That
+  // module has a documented, deliberate circular import back to main.js
+  // (radioPickupMesh/playWakeDialogue/stopMenuAmbience) - fine for
+  // functions (hoisted), but a `let` export's live binding can end up
+  // permanently in the temporal-dead-zone depending on which module
+  // triggers evaluation of the cycle first, which is exactly what broke
+  // in the browser (main.js:2748 "Cannot access 'titleScreenActive'
+  // before initialization", on every single animate() frame - the
+  // titleScreen.js module record itself was left in an errored/
+  // unresolved state by the cycle). Plain object-property reads have no
+  // TDZ, so moving it onto `state` sidesteps the whole class of bug
+  // regardless of import order. See ui/titleScreen.js's setter.
+  titleScreenActive:true,
   triedLockedDoor:false,         // first attempt gets the full static+line beat; repeats just re-fire the static
   doorKeyStatus:'none',          // 'none' -> 'searching' (after first try) -> 'notHere' (after checking the bed table)
   relayActive:false,             // true the moment the tower's reached AND the radio's been collected (see updateRadioTower()) - the locked door is wired to this, not to any key
