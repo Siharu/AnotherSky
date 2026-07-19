@@ -2324,8 +2324,9 @@ document.querySelectorAll('.svg-menu-btn, .svg-footer-link').forEach(el=>{
   });
 });
 const pauseBtn = $('pause-btn');
-pauseBtn.addEventListener('click', ()=>{ corruptPress(pauseBtn); openPauseMenu(); });
-pauseBtn.addEventListener('touchstart', e=>{ e.preventDefault(); e.stopPropagation(); corruptPress(pauseBtn); openPauseMenu(); }, {passive:false});
+console.log('[DIAG] pause-btn element:', pauseBtn);
+pauseBtn.addEventListener('click', ()=>{ console.log('[DIAG] pause-btn clicked, hud visible?', hud.classList.contains('visible')); corruptPress(pauseBtn); openPauseMenu(); });
+pauseBtn.addEventListener('touchstart', e=>{ e.preventDefault(); e.stopPropagation(); console.log('[DIAG] pause-btn touchstart, hud visible?', hud.classList.contains('visible')); corruptPress(pauseBtn); openPauseMenu(); }, {passive:false});
 
 /* ---------- KEYBOARD NAVIGATION PASS ----------
    Escape closes whichever overlay is open (settings/credits/bigmap/pause),
