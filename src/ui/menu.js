@@ -1,10 +1,10 @@
-// ---------- PAUSE MENU (core) ----------
+// ---------- MENU HUB (core) ----------
 // Rebuilt clean (this round) after the previous gameHasBegun-boolean
 // version turned out to be the actual cause of "menu button does
 // nothing": that flag had to be hand-set to true from three separate
 // call sites (restoreFromSave, the wake sequence, its anime.js
 // fallback), and if any of those three didn't run - or ran an
-// error-throwing code path before reaching the flip - openPauseMenu()'s
+// error-throwing code path before reaching the flip - openHub()'s
 // guard just silently no-op'd forever with zero feedback.
 //
 // This version drops the shadow variable entirely. Instead, "has the
@@ -15,10 +15,10 @@
 // nothing to silently forget to flip. If the HUD is visible, the menu
 // can open. That's the whole rule.
 //
-// Scope kept deliberately narrow: this file owns pauseOverlay,
-// pauseMenuOpen, openPauseMenu()/closePauseMenu(), and pauseFlavor() -
-// the self-contained "is the pause menu open" state machine. The
-// individual pause-button click handlers (settings/load/quit/memories/
+// Scope kept deliberately narrow: this file owns hubOverlay,
+// hubOpen, openHub()/closeHub(), and showHubFlavor() -
+// the self-contained "is the menu hub open" state machine. The
+// individual hub-button click handlers (settings/load/quit/memories/
 // radiolog/inventory/help) and the Escape-key priority chain are NOT
 // moved here - they reach into settings.js, save.js, memories/radiolog/
 // inventory/help.js, bigmap.js, and credits.js all at once, none of
@@ -32,7 +32,7 @@
 
 const $ = id => document.getElementById(id);
 
-export const pauseOverlay = $('pause-overlay');
+export const hubOverlay = $('hub-overlay');
 const bigmapOverlay = $('bigmap-overlay');
 const hud = $('hud');
 
@@ -40,25 +40,25 @@ export function isGameplayActive(){
   return !!(hud && hud.classList.contains('visible'));
 }
 
-export let pauseMenuOpen = false;
+export let hubOpen = false;
 
-export function openPauseMenu(){
-  if(!isGameplayActive()){ console.warn('[menu] pause-btn click ignored: HUD is not visible yet (game hasn\'t started)'); return; }
-  if(pauseMenuOpen) return;
+export function openHub(){
+  if(!isGameplayActive()){ console.warn('[menu] hub-btn click ignored: HUD is not visible yet (game hasn\'t started)'); return; }
+  if(hubOpen) return;
   if(bigmapOverlay && bigmapOverlay.classList.contains('open')) return; // don't stack over the map
-  pauseMenuOpen = true;
-  pauseOverlay.classList.add('open');
+  hubOpen = true;
+  hubOverlay.classList.add('open');
 }
 
-export function closePauseMenu(){
-  pauseOverlay.classList.remove('open');
-  pauseMenuOpen = false;
+export function closeHub(){
+  hubOverlay.classList.remove('open');
+  hubOpen = false;
 }
 
-export function pauseFlavor(text){
-  const el = $('pause-flavor');
+export function showHubFlavor(text){
+  const el = $('hub-flavor');
   el.textContent = text;
   el.classList.add('show');
-  clearTimeout(pauseFlavor._t);
-  pauseFlavor._t = setTimeout(()=> el.classList.remove('show'), 3000);
+  clearTimeout(showHubFlavor._t);
+  showHubFlavor._t = setTimeout(()=> el.classList.remove('show'), 3000);
 }

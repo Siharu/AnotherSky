@@ -313,9 +313,9 @@ $('begin-btn').addEventListener('click', ()=>{
   // scene (and a little more dread) before they finally give up and stay
   // open. Partial-opens use a smaller travel distance than the final one.
   // (Previously set an eager "game has begun" flag here, before the
-  // multi-second eyelid animation even played, so the pause menu was
+  // multi-second eyelid animation even played, so the menu hub was
   // reachable mid-animation. That flag - and the extra state it required
-  // keeping in sync - turned out to be the actual bug: openPauseMenu()
+  // keeping in sync - turned out to be the actual bug: openHub()
   // now just checks whether the HUD is visible, so the menu becomes
   // reachable the moment hud.classList.add('visible') actually runs
   // below/in the catch fallback, with nothing separate to forget to set.)

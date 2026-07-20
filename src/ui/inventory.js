@@ -16,7 +16,7 @@ import { getInventorySlots } from '../systems/inventory.js';
 // which slot is currently shown in the detail line - module-level so it
 // survives re-renders within the same panel session (closing/reopening
 // the panel calls renderInventory() fresh each time, which resets this
-// to null; see main.js's pause-inventory click handler)
+// to null; see main.js's hub-inventory click handler)
 let selectedSlotId = null;
 
 export function renderInventory(){

@@ -15,8 +15,8 @@
 // for zero benefit. render/renderer.js stays a documented stub that
 // re-exports this file's applyResolution (see that file).
 //
-// pauseOverlay (menu.js-owned) is imported here for closeSettingsOverlay's
-// "return to pause if opened from pause" behavior. This turned out to be
+// hubOverlay (menu.js-owned) is imported here for closeSettingsOverlay's
+// "return to the hub if opened from it" behavior. This turned out to be
 // one-directional, not circular like sky/weather.js's or safehouse.js's
 // import shapes: menu.js's own scope stayed narrow enough (see that
 // file's header comment) that it never needed to import anything back
@@ -26,7 +26,7 @@ import { renderer, baseDPR } from '../core/scene.js';
 import { state } from '../core/state.js';
 import { getMasterGain } from './audio.js';
 import { deleteSave } from './save.js';
-import { pauseOverlay } from '../ui/menu.js';
+import { hubOverlay } from '../ui/menu.js';
 import { setGrassQuality } from '../world/grass.js';
 
 const $ = id => document.getElementById(id);
@@ -191,21 +191,21 @@ document.addEventListener('fullscreenchange', updateFullscreenLabel);
 updateFullscreenLabel();
 
 // Settings can be opened from the title menu OR from inside the in-game
-// pause menu. Opening it from pause used to just layer settings on top
-// without hiding the pause panel underneath - both overlays stayed
-// 'open' at once, so the torn-paper pause panel (different width, its
+// menu hub. Opening it from the hub used to just layer settings on top
+// without hiding the hub panel underneath - both overlays stayed
+// 'open' at once, so the torn-paper hub panel (different width, its
 // own dim backdrop) kept showing around/behind the settings panel like a
 // second, dimmer menu. This flag remembers which door we came in through
 // so closing settings puts us back where we were instead of leaving
-// pause silently still open behind it.
-export let settingsOpenedFromPause = false;
-export function setSettingsOpenedFromPause(v){ settingsOpenedFromPause = v; }
+// hub silently still open behind it.
+export let settingsOpenedFromHub = false;
+export function setSettingsOpenedFromHub(v){ settingsOpenedFromHub = v; }
 
 export function closeSettingsOverlay(){
   settingsOverlay.classList.remove('open');
-  if(settingsOpenedFromPause){
-    settingsOpenedFromPause = false;
-    pauseOverlay.classList.add('open');
+  if(settingsOpenedFromHub){
+    settingsOpenedFromHub = false;
+    hubOverlay.classList.add('open');
   }
 }
 $('settings-close').addEventListener('click', closeSettingsOverlay);

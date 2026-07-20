@@ -53,12 +53,12 @@ import { SAVE_KEY, hasSave, writeSave, deleteSave, updateRegainAvailability, tic
 import {
   userVolume, settingsSensMult, settingsBrightness, settingsResScale,
   settingsInvertY, settingsVibration,
-  applyResolution, settingsOverlay, settingsOpenedFromPause,
-  setSettingsOpenedFromPause, closeSettingsOverlay, saveSettings
+  applyResolution, settingsOverlay, settingsOpenedFromHub,
+  setSettingsOpenedFromHub, closeSettingsOverlay, saveSettings
 } from './systems/settings.js';
 import {
-  pauseOverlay, isGameplayActive, pauseMenuOpen,
-  openPauseMenu, closePauseMenu, pauseFlavor
+  hubOverlay, isGameplayActive, hubOpen,
+  openHub, closeHub, showHubFlavor
 } from './ui/menu.js';
 import { setTitleScreenActive, tickMenuIdle, registerMainRefs } from './ui/titleScreen.js';
 import { updateDread } from './systems/dread.js';
@@ -2205,7 +2205,7 @@ $('begin-btn').addEventListener('click', ()=> corruptPress($('begin-btn')));
 titleScreen.addEventListener('pointerdown', startMenuAmbience, {once:true});
 titleScreen.addEventListener('keydown', startMenuAmbience, {once:true});
 
-/* ---------- IN-GAME PAUSE MENU (custom SVG) ----------
+/* ---------- IN-GAME MENU HUB (custom SVG) ----------
    Player-facing entry point into Settings and Load Game while actually
    playing. Previously neither was reachable once the title screen was
    behind you - which is the actual reason settings changes looked like
@@ -2220,33 +2220,33 @@ titleScreen.addEventListener('keydown', startMenuAmbience, {once:true});
    contains('visible') directly off the DOM at click time, rather than a
    separately hand-set boolean (an earlier gameHasBegun flag needed
    three call sites to stay in sync and was the actual cause of a
-   "pause button does nothing" bug - see menu.js's header comment).
-   pauseOverlay/pauseMenuOpen/openPauseMenu/closePauseMenu/pauseFlavor/
+   "menu button does nothing" bug - see menu.js's header comment).
+   hubOverlay/hubOpen/openHub/closeHub/showHubFlavor/
    isGameplayActive now live in ui/menu.js (Wave 3 - see
    docs/HANDOFF.md), imported at top-level. The button wiring below
    stays here since it reaches into settings/save/memories/radiolog/
    inventory/help/bigmap/credits all at once - see menu.js's own header
    comment. */
-$('pause-resume').addEventListener('click', ()=>{ corruptPress($('pause-resume')); closePauseMenu(); });
-$('pause-settings').addEventListener('click', ()=>{
-  corruptPress($('pause-settings'));
-  setSettingsOpenedFromPause(true);
-  pauseOverlay.classList.remove('open'); // hide pause underneath so it doesn't stack with settings
+$('hub-resume').addEventListener('click', ()=>{ corruptPress($('hub-resume')); closeHub(); });
+$('hub-settings').addEventListener('click', ()=>{
+  corruptPress($('hub-settings'));
+  setSettingsOpenedFromHub(true);
+  hubOverlay.classList.remove('open'); // hide hub underneath so it doesn't stack with settings
   settingsOverlay.classList.add('open');
 });
-$('pause-load').addEventListener('click', ()=>{
-  corruptPress($('pause-load'));
-  if(!hasSave()){ pauseFlavor('there is nothing here to return to.'); return; }
+$('hub-load').addEventListener('click', ()=>{
+  corruptPress($('hub-load'));
+  if(!hasSave()){ showHubFlavor('there is nothing here to return to.'); return; }
   if(!confirm('Load your last save? Any progress since then will be lost.')) return;
   const raw = (()=>{ try{ return localStorage.getItem(SAVE_KEY); }catch(e){ return null; } })();
   if(!raw) return;
   try{
-    closePauseMenu();
+    closeHub();
     restoreFromSave(JSON.parse(raw));
   }catch(e){ console.error('save data corrupt, ignoring', e); }
 });
-$('pause-quit').addEventListener('click', ()=>{
-  corruptPress($('pause-quit'));
+$('hub-quit').addEventListener('click', ()=>{
+  corruptPress($('hub-quit'));
   if(!confirm('Quit to the title screen? Make sure anything you want kept has been saved.')) return;
   location.reload();
 });
@@ -2256,16 +2256,16 @@ $('pause-quit').addEventListener('click', ()=>{
    any HTML or JS - lore text only ever surfaced once, for 4.2s, via
    showLineBox() on pickup, then was gone for good if you missed it or
    were too tense to read mid-collection. This actually persists it. */
-$('pause-memories').addEventListener('click', ()=>{
-  corruptPress($('pause-memories'));
-  pauseOverlay.classList.remove('open');
+$('hub-memories').addEventListener('click', ()=>{
+  corruptPress($('hub-memories'));
+  hubOverlay.classList.remove('open');
   $('memories-overlay').classList.add('open');
   try{ renderMemories(); startGlitchScramble(); }
   catch(err){ console.error('renderMemories failed:', err); }
 });
 $('memories-close').addEventListener('click', ()=>{
   $('memories-overlay').classList.remove('open');
-  pauseOverlay.classList.add('open');
+  hubOverlay.classList.add('open');
   if(!creditsOverlay.classList.contains('open')) stopGlitchScramble();
 });
 
@@ -2273,32 +2273,32 @@ $('memories-close').addEventListener('click', ()=>{
    Replaces the ephemeral ticker-only broadcastRadio() behaviour (5.2s
    then gone forever) with an actual persisted history, same idea as
    Memories. state.radioLog is pushed to inside broadcastRadio() itself. */
-$('pause-radiolog').addEventListener('click', ()=>{
-  corruptPress($('pause-radiolog'));
-  pauseOverlay.classList.remove('open');
+$('hub-radiolog').addEventListener('click', ()=>{
+  corruptPress($('hub-radiolog'));
+  hubOverlay.classList.remove('open');
   $('radiolog-overlay').classList.add('open');
   try{ renderRadioLog(); }
   catch(err){ console.error('renderRadioLog failed:', err); }
 });
 $('radiolog-close').addEventListener('click', ()=>{
   $('radiolog-overlay').classList.remove('open');
-  pauseOverlay.classList.add('open');
+  hubOverlay.classList.add('open');
 });
 
 /* ---------- INVENTORY ----------
    Real bag now (Phase 3) - a grid of item slot tiles you click through
    to inspect, plus objectives underneath. See ui/inventory.js/
    systems/inventory.js/data/items.js. */
-$('pause-inventory').addEventListener('click', ()=>{
-  corruptPress($('pause-inventory'));
-  pauseOverlay.classList.remove('open');
+$('hub-inventory').addEventListener('click', ()=>{
+  corruptPress($('hub-inventory'));
+  hubOverlay.classList.remove('open');
   $('inventory-overlay').classList.add('open');
   try{ renderInventory(); }
   catch(err){ console.error('renderInventory failed:', err); }
 });
 $('inventory-close').addEventListener('click', ()=>{
   $('inventory-overlay').classList.remove('open');
-  pauseOverlay.classList.add('open');
+  hubOverlay.classList.add('open');
 });
 
 /* ---------- HELP ----------
@@ -2306,16 +2306,16 @@ $('inventory-close').addEventListener('click', ()=>{
    anywhere in the game (not on the title screen, not in-game). Adapted to
    touch vs. desktop at render time rather than guessing once, since a
    player can plausibly switch device between sessions. */
-$('pause-help').addEventListener('click', ()=>{
-  corruptPress($('pause-help'));
-  pauseOverlay.classList.remove('open');
+$('hub-help').addEventListener('click', ()=>{
+  corruptPress($('hub-help'));
+  hubOverlay.classList.remove('open');
   $('help-overlay').classList.add('open');
   try{ renderHelp(); }
   catch(err){ console.error('renderHelp failed:', err); }
 });
 $('help-close').addEventListener('click', ()=>{
   $('help-overlay').classList.remove('open');
-  pauseOverlay.classList.add('open');
+  hubOverlay.classList.add('open');
 });
 
 document.querySelectorAll('.svg-menu-btn, .svg-footer-link').forEach(el=>{
@@ -2323,17 +2323,26 @@ document.querySelectorAll('.svg-menu-btn, .svg-footer-link').forEach(el=>{
     if(e.key==='Enter' || e.key===' '){ e.preventDefault(); el.dispatchEvent(new Event('click')); }
   });
 });
-const pauseBtn = $('pause-btn');
-console.log('[DIAG] pause-btn element:', pauseBtn);
-pauseBtn.addEventListener('click', ()=>{ console.log('[DIAG] pause-btn clicked, hud visible?', hud.classList.contains('visible')); corruptPress(pauseBtn); openPauseMenu(); });
-pauseBtn.addEventListener('touchstart', e=>{ e.preventDefault(); e.stopPropagation(); console.log('[DIAG] pause-btn touchstart, hud visible?', hud.classList.contains('visible')); corruptPress(pauseBtn); openPauseMenu(); }, {passive:false});
+const hubBtn = $('hub-btn');
+if(!hubBtn) console.error('[hub-btn] element not found in DOM - id mismatch or markup got removed');
+hubBtn.addEventListener('click', ()=>{
+  console.warn('[hub-btn] click received, HUD visible:', hud.classList.contains('visible'));
+  corruptPress(hubBtn);
+  openHub();
+});
+hubBtn.addEventListener('touchstart', e=>{
+  e.preventDefault(); e.stopPropagation();
+  console.warn('[hub-btn] touchstart received, HUD visible:', hud.classList.contains('visible'));
+  corruptPress(hubBtn);
+  openHub();
+}, {passive:false});
 
 /* ---------- KEYBOARD NAVIGATION PASS ----------
-   Escape closes whichever overlay is open (settings/credits/bigmap/pause),
-   in priority order, or opens the pause menu if nothing else is open and
+   Escape closes whichever overlay is open (settings/credits/bigmap/hub),
+   in priority order, or opens the menu hub if nothing else is open and
    the player is actually in-game - there was no other way to back out via
    keyboard once Tab had moved focus inside one of them, and no keyboard
-   path into the pause menu at all before this. */
+   path into the menu hub at all before this. */
 document.addEventListener('keydown', (e)=>{
   if(e.key !== 'Escape') return;
   if(settingsOverlay.classList.contains('open')) closeSettingsOverlay();
@@ -2344,15 +2353,15 @@ document.addEventListener('keydown', (e)=>{
   }
   else if($('memories-overlay').classList.contains('open')){
     $('memories-overlay').classList.remove('open');
-    pauseOverlay.classList.add('open');
+    hubOverlay.classList.add('open');
     stopGlitchScramble();
   }
-  else if($('radiolog-overlay').classList.contains('open')){ $('radiolog-overlay').classList.remove('open'); pauseOverlay.classList.add('open'); }
-  else if($('inventory-overlay').classList.contains('open')){ $('inventory-overlay').classList.remove('open'); pauseOverlay.classList.add('open'); }
-  else if($('help-overlay').classList.contains('open')){ $('help-overlay').classList.remove('open'); pauseOverlay.classList.add('open'); }
+  else if($('radiolog-overlay').classList.contains('open')){ $('radiolog-overlay').classList.remove('open'); hubOverlay.classList.add('open'); }
+  else if($('inventory-overlay').classList.contains('open')){ $('inventory-overlay').classList.remove('open'); hubOverlay.classList.add('open'); }
+  else if($('help-overlay').classList.contains('open')){ $('help-overlay').classList.remove('open'); hubOverlay.classList.add('open'); }
   else if(bigmapOverlay.classList.contains('open')){ bigmapOverlay.classList.remove('open'); state.started = true; }
-  else if(pauseOverlay.classList.contains('open')) closePauseMenu();
-  else if(isGameplayActive()) openPauseMenu();
+  else if(hubOverlay.classList.contains('open')) closeHub();
+  else if(isGameplayActive()) openHub();
 });
 
 /* ---------- MENU FLAVOR TEXT ----------

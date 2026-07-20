@@ -564,9 +564,9 @@
   #settings-overlay.open, #credits-overlay.open{ opacity:1; pointer-events:auto; }
 
   /* Memories / Radio Log / Inventory / Help - opened from the in-game
-     pause menu. Same dim-backdrop + panel-box chrome as Settings/Credits
+     menu hub. Same dim-backdrop + panel-box chrome as Settings/Credits
      (z-index 90, same layer - only one of these is ever open at once,
-     always from the pause menu underneath at z-index 85). */
+     always from the menu hub underneath at z-index 85). */
   #memories-overlay, #radiolog-overlay, #inventory-overlay, #help-overlay{
     position:fixed; inset:0; z-index:90; background:rgba(4,3,5,0.94);
     display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -651,39 +651,39 @@
   }
   .help-section-title:first-child{ margin-top:0; }
 
-  /* ---------- IN-GAME PAUSE MENU (custom SVG) ----------
+  /* ---------- IN-GAME MENU HUB (custom SVG) ----------
      Same fixed dim-backdrop treatment as the other overlays, but the
      panel chrome itself is real SVG rather than styled divs - a torn
      paper path, a tape scrap, and four button groups built from a
      shared reusable torn-rect <path> referenced via <use>. Sits below
      Settings/Credits (z-index 85 vs 90) since opening Settings from here
      should layer on top of it, not replace it. */
-  #pause-overlay{
+  #hub-overlay{
     position:fixed; inset:0; z-index:85; background:rgba(4,3,5,0.9);
     display:flex; align-items:center; justify-content:center;
     opacity:0; pointer-events:none; transition:opacity .25s ease;
     padding:24px;
   }
-  #pause-overlay.open{ opacity:1; pointer-events:auto; }
-  #pause-svg{ width:min(88vw,340px); max-height:94vh; height:auto; overflow:visible; }
-  #pause-overlay{ overflow-y:auto; }
-  .pause-panel-bg{
+  #hub-overlay.open{ opacity:1; pointer-events:auto; }
+  #hub-svg{ width:min(88vw,340px); max-height:94vh; height:auto; overflow:visible; }
+  #hub-overlay{ overflow-y:auto; }
+  .hub-panel-bg{
     fill:rgba(10,9,12,0.92); stroke:rgba(201,194,182,0.28); stroke-width:1.5;
   }
-  .pause-tape{ fill:rgba(201,194,182,0.14); stroke:rgba(201,194,182,0.2); stroke-width:1; }
-  .pause-title{
+  .hub-tape{ fill:rgba(201,194,182,0.14); stroke:rgba(201,194,182,0.2); stroke-width:1; }
+  .hub-title{
     font-family:var(--font-headline); font-size:26px; letter-spacing:.28em;
     fill:var(--bone); text-transform:uppercase;
   }
-  .pause-sub{
+  .hub-sub{
     font-family:var(--font-serif); font-style:italic; font-size:12px;
     letter-spacing:.03em; fill:rgba(201,194,182,0.45);
   }
-  .pause-flavor{
+  .hub-flavor{
     font-family:var(--font-serif); font-style:italic; font-size:11px;
     fill:rgba(201,194,182,0.4); opacity:0; transition:opacity .5s ease;
   }
-  .pause-flavor.show{ opacity:1; }
+  .hub-flavor.show{ opacity:1; }
   .svg-menu-btn{ cursor:pointer; outline:none; }
   .svg-menu-btn use{
     fill:rgba(20,10,12,0.55); stroke:rgba(201,194,182,0.3); stroke-width:1;
@@ -1599,48 +1599,48 @@
     <button class="panel-close" id="credits-close">Close</button>
   </div>
 
-  <div id="pause-overlay">
-    <svg id="pause-svg" viewBox="0 0 360 610" xmlns="http://www.w3.org/2000/svg">
+  <div id="hub-overlay">
+    <svg id="hub-svg" viewBox="0 0 360 610" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <path id="tornBtnShape" d="M4,2 L256,0 L260,10 L258,42 L252,50 L6,48 L0,40 L2,8 Z"></path>
       </defs>
       <!-- torn-paper panel body -->
-      <path d="M10,18 L340,6 L352,42 L349,540 L322,576 L20,569 L6,530 L14,42 Z" class="pause-panel-bg"></path>
+      <path d="M10,18 L340,6 L352,42 L349,540 L322,576 L20,569 L6,530 L14,42 Z" class="hub-panel-bg"></path>
       <!-- tape scrap -->
-      <rect x="150" y="-6" width="60" height="18" transform="rotate(-3 180 3)" class="pause-tape"></rect>
+      <rect x="150" y="-6" width="60" height="18" transform="rotate(-3 180 3)" class="hub-tape"></rect>
 
-      <text x="180" y="60" text-anchor="middle" class="pause-title">MENU</text>
-      <text x="180" y="82" text-anchor="middle" class="pause-sub">the world doesn't wait for you to read this.</text>
+      <text x="180" y="60" text-anchor="middle" class="hub-title">MENU</text>
+      <text x="180" y="82" text-anchor="middle" class="hub-sub">the world doesn't wait for you to read this.</text>
 
-      <g class="svg-menu-btn" id="pause-resume" tabindex="0" role="button" transform="translate(50,112)">
+      <g class="svg-menu-btn" id="hub-resume" tabindex="0" role="button" transform="translate(50,112)">
         <use href="#tornBtnShape" width="260" height="50"></use>
         <text x="130" y="31" text-anchor="middle">Resume</text>
       </g>
-      <g class="svg-menu-btn" id="pause-memories" tabindex="0" role="button" transform="translate(50,174)">
+      <g class="svg-menu-btn" id="hub-memories" tabindex="0" role="button" transform="translate(50,174)">
         <use href="#tornBtnShape" width="260" height="50"></use>
         <text x="130" y="31" text-anchor="middle">Memories</text>
       </g>
-      <g class="svg-menu-btn" id="pause-radiolog" tabindex="0" role="button" transform="translate(50,236)">
+      <g class="svg-menu-btn" id="hub-radiolog" tabindex="0" role="button" transform="translate(50,236)">
         <use href="#tornBtnShape" width="260" height="50"></use>
         <text x="130" y="31" text-anchor="middle">Radio Log</text>
       </g>
-      <g class="svg-menu-btn" id="pause-inventory" tabindex="0" role="button" transform="translate(50,298)">
+      <g class="svg-menu-btn" id="hub-inventory" tabindex="0" role="button" transform="translate(50,298)">
         <use href="#tornBtnShape" width="260" height="50"></use>
         <text x="130" y="31" text-anchor="middle">Inventory</text>
       </g>
-      <g class="svg-menu-btn" id="pause-help" tabindex="0" role="button" transform="translate(50,360)">
+      <g class="svg-menu-btn" id="hub-help" tabindex="0" role="button" transform="translate(50,360)">
         <use href="#tornBtnShape" width="260" height="50"></use>
         <text x="130" y="31" text-anchor="middle">Help</text>
       </g>
-      <g class="svg-menu-btn" id="pause-settings" tabindex="0" role="button" transform="translate(50,422)">
+      <g class="svg-menu-btn" id="hub-settings" tabindex="0" role="button" transform="translate(50,422)">
         <use href="#tornBtnShape" width="260" height="50"></use>
         <text x="130" y="31" text-anchor="middle">Settings</text>
       </g>
 
-      <text x="180" y="500" text-anchor="middle" class="svg-footer-link" id="pause-load" tabindex="0" role="button">Load Last Save</text>
-      <text x="180" y="524" text-anchor="middle" class="svg-footer-link danger" id="pause-quit" tabindex="0" role="button">Quit to Title</text>
+      <text x="180" y="500" text-anchor="middle" class="svg-footer-link" id="hub-load" tabindex="0" role="button">Load Last Save</text>
+      <text x="180" y="524" text-anchor="middle" class="svg-footer-link danger" id="hub-quit" tabindex="0" role="button">Quit to Title</text>
 
-      <text x="180" y="556" text-anchor="middle" id="pause-flavor" class="pause-flavor"></text>
+      <text x="180" y="556" text-anchor="middle" id="hub-flavor" class="hub-flavor"></text>
     </svg>
   </div>
 
@@ -1725,7 +1725,7 @@
           </g>
         </svg>
       </div>
-      <div class="icon-btn" id="pause-btn" title="menu">☰</div>
+      <div class="icon-btn" id="hub-btn" title="menu">☰</div>
     </div>
   </div>
   <div id="compass-strip">N</div>
