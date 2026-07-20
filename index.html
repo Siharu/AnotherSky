@@ -1149,6 +1149,14 @@
     font-variant-numeric:tabular-nums;
   }
   #icon-buttons{ display:flex; gap:8px; pointer-events:auto; position:relative; order:-1; }
+  /* the invisible camera-drag #look-zone widens to top:0/100%/62% in
+     portrait (below) and, since it comes after #top-bar in the DOM with
+     no z-index set anywhere, was rendering above the icon buttons and
+     silently eating every tap on hub-btn before it ever reached the
+     button - no console error, because the click never landed on
+     hub-btn at all. Giving top-bar its own stacking context above
+     look-zone/joystick-zone fixes that regardless of DOM order. */
+  #top-bar{ z-index:2; }
 
   /* torn lined-paper treatment, same DNA as .mb-paper on the main menu
      buttons - visible ruled-line texture (not the near-invisible one on
