@@ -561,6 +561,12 @@
     opacity:0; pointer-events:none; transition:opacity .25s ease;
     padding:24px;
   }
+  /* Settings grew a lot taller (Visual/Audio/Gameplay sections) - tall
+     enough that on an ordinary 100%-zoom viewport the panel itself was
+     overflowing the screen top-to-bottom. Fix lives on .panel-terminal
+     below (max-height + its own overflow-y:auto), the same "cap the box,
+     scroll inside it" pattern #hub-doc and .panel-box-tall already use -
+     not on this overlay rule, which stays exactly as it was. */
   #settings-overlay.open, #credits-overlay.open{ opacity:1; pointer-events:auto; }
 
   /* Memories / Radio Log / Inventory / Help - opened from the in-game
@@ -830,9 +836,11 @@
      the other panel-box overlays (Memories/Radio Log/Inventory/Help/
      Credits) keep their plainer centered-title layout untouched, since
      only Settings was singled out for this pass. */
-  .panel-terminal{ padding-top:40px; }
+  .panel-terminal{
+    padding-top:40px; max-height:92vh; overflow-y:auto;
+  }
   .panel-tape{
-    position:absolute; width:64px; height:18px; top:-9px; left:50%; margin-left:-32px;
+    position:absolute; width:64px; height:18px; top:6px; left:50%; margin-left:-32px;
     background:linear-gradient(100deg, rgba(180,164,138,0.4), rgba(180,164,138,0.26));
     border:1px solid rgba(0,0,0,0.2); box-shadow:0 2px 5px rgba(0,0,0,0.35);
     opacity:.8; transform:rotate(-2deg);
