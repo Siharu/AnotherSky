@@ -1,4 +1,4 @@
-# Another Sky — Handoff Notes (updated — perf pass + pause-menu rebuild + door/rain/overlap fixes, all in src/)
+# Another Sky — Handoff Notes (updated — HUD button/minimap overlap fixed, chunk-streaming stutter root-caused and fixed)
 
 ## Development
 
@@ -81,6 +81,180 @@ above, but same theme):**
   runtime behavior) - doesn't replace the standing live-playtest gap,
   narrows what that playtest still has to cover. Run via
   `node docs/smoketest.js`.
+
+---
+
+## This round: HUD button/minimap overlap fix, plus the real cause of "random stutter regardless of resolution"
+
+Two unrelated fixes requested together.
+
+### 1. Radio/hub buttons blocked by the minimap once unlocked
+`#icon-buttons` (radio-btn + hub-btn) lived in `#top-bar`'s right slot
+(`justify-content:space-between`), and `#minimap` is pinned
+`top:14px; right:14px; 104×104px` - the exact same top-right corner.
+While the minimap stays hidden (`opacity:0` pre-radio-pickup) this never
+showed, but the moment `#minimap.visible` kicks in after reaching the
+relay station, it physically covered both buttons.
+
+**Fix (`index.html` only, no JS changes):** `#top-bar` changed from
+`space-between` to `flex-start`, and `#icon-buttons` gets `order:-1` so
+it renders first regardless of its DOM position (an empty spacer div
+was already the first child; left it in place rather than reordering
+markup). Buttons now sit top-left; top-right stays clear for the
+minimap permanently, not just until the next thing gets added there.
+
+### 2. Root cause of "low frame rate / random stutter, same at any resolution"
+User report: stutter didn't improve at low resolution, and felt like
+"everything loading at once instead of near/necessary stuff first" -
+both are strong tells for a CPU-bound cause, not a GPU fill-rate one
+(resolution only changes per-pixel/fragment cost).
+
+Traced two real, confirmed causes, both in world generation:
+
+- `main.js`'s `generateDistrict()` (the hand-authored ~200-unit-radius
+  downtown, ~100+ buildings) builds fully synchronously in one blocking
+  call before the game starts. One-time load-time cost, not "during
+  play" stutter - left alone this round, noted below as a separate
+  follow-up if the title/loading transition doesn't already cover it.
+- `world/streaming.js`'s `loadChunk()` - **this was the actual
+  during-play cause.** `updateWorldStream()` already budgeted
+  `CHUNKS_PER_FRAME=2` from an earlier round, but budgeted by *whole
+  chunks*, and a single chunk can place up to 9 buildings plus ruins/
+  lamp/bridge/clutter - all real `THREE.Mesh`/material construction -
+  in one synchronous call. Worst case: two adjacent chunks needing load
+  on the same frame could burst ~20 objects' worth of mesh-building
+  into one frame. Triggered by crossing a chunk boundary while walking
+  rather than any fixed timer, so from the player's seat it reads as
+  random even though it's fully deterministic given position - and it's
+  pure CPU work, so lowering resolution does nothing to it. Matches the
+  reported symptom exactly, no speculation needed once traced.
+
+**Fix:** `loadChunk()` converted to `loadChunkSteps()`, a generator that
+yields after every individual object placement (each building, each
+ruin, the lamp, the rare bridge) instead of building the whole chunk in
+one call. `updateWorldStream()` now drives it with a fixed
+`STEPS_PER_FRAME=3` object-placement budget per frame, resuming the
+same in-progress generator across frames as needed, instead of
+`CHUNKS_PER_FRAME` whole-chunk budgeting. Worst-case per-frame world-gen
+cost is now constant (3 object placements) regardless of how many
+chunks came into range at once or how much any one of them needs -
+directly answers "loads near/necessary stuff first" too, since the
+existing nearest-chunk-first sort still applies, just at finer
+granularity now.
+
+One correctness pitfall caught and fixed before calling this done: an
+early version nulled out an in-progress generator whenever the player
+crossed another chunk boundary before it finished. That's wrong -
+`loadChunkSteps()` adds its (possibly still-partial) entry to
+`activeChunks` on its very first line, and only calls
+`registerChunkMinimapBuildings()`/`scatterChunkClutter()`/
+`registerChunkWindowSpots()` at the very end - abandoning it mid-run
+would leave a permanently partial, never-registered, never-unloaded
+ghost chunk behind. Fixed: an in-progress generator is always allowed
+to run to completion (a few frames at most, given the step budget);
+only the *pending queue* gets refreshed on a boundary crossing. If the
+player's genuinely moved out of that chunk's unload radius by the time
+it finishes, the next boundary crossing's existing unload check removes
+it normally, same as any other stale chunk.
+
+`loadChunk()` (the old synchronous name) is kept as a thin wrapper that
+just drains the generator in one go, so the exported function signature
+`main.js`/anything else reaches for doesn't change - nothing downstream
+needed touching. Confirmed via grep: nothing outside `streaming.js`
+referenced the removed `CHUNKS_PER_FRAME` constant or called `loadChunk`
+expecting the old synchronous-whole-chunk behavior.
+
+**Verified:** `node --check` clean on `streaming.js` and `main.js`.
+Exports (`activeChunks, loadChunk, unloadChunk, updateWorldStream,
+isOnExitRoad, UNLOAD_RADIUS_CHUNKS, mulberry32`) unchanged.
+
+**Not yet browser-verified** - same standing gap as everything else.
+Specifically: does the button reposition actually clear the minimap
+collision in a real layout (font metrics/safe-area insets can shift
+things slightly from what the CSS math suggests), and does the
+finer-grained streaming budget measurably smooth the stutter or just
+change its shape (e.g. spreads the same total cost over more frames,
+which should still be a real win, but "measurably fixed" needs an
+actual frame-time trace, not just reasoning from the code).
+
+**Left open, worth a follow-up if #1's title-screen load-time freeze
+turns out to matter too:** `generateDistrict()` could get the same
+generator treatment `loadChunkSteps()` just got, run incrementally
+behind a loading screen instead of blocking the main thread in one
+shot - not done this round since it wasn't the reported symptom
+(during-play stutter, not initial load time).
+
+---
+
+## This round: themed resolution dropdown - last unstyled native control on the Settings panel
+
+The Settings panel is otherwise fully custom-themed (torn-paper
+clip-path, blood-drip slider thumbs, rust rotary-knob thumbs, custom
+toggle switches) - the one glaring exception was the Resolution
+dropdown: a bare native `<select>`, and specifically its *open* list,
+which is rendered entirely by the OS/browser and can't be styled by CSS
+in any browser at all. That stark white OS list was the actual source
+of the "bland" complaint, not the closed trigger.
+
+**Approach:** checked `systems/settings.js` first rather than assuming
+- confirmed it only ever listens for a `change` event on the hidden
+`#settings-res` select and does nothing else DOM-wise with it
+(`applyResolution()` + `saveSettings()`). That meant the fix could be
+purely additive: build a themed trigger + `<ul role="listbox">` overlay
+that drives the *same* hidden select and dispatches a real `change` on
+it, with zero changes to the actual settings logic.
+
+- `index.html`: added `.custom-select`/`.custom-select-trigger`/
+  `.custom-select-options` CSS (matches the panel's existing mono-font/
+  uppercase/letter-spacing language, rust-colored active/selected
+  states to match the rest of the panel) and the new markup - a
+  `<div class="custom-select" id="res-select">` (button trigger + `<ul>`
+  of `<li role="option">`s) sitting next to the original `<select
+  id="settings-res" hidden aria-hidden="true">`, which stays in the DOM
+  as the real accessible form control and the actual source of truth.
+- `src/ui/res-select.js` (new) - the sync layer. Owns zero resolution
+  state itself; its whole job is keeping the visible list and the
+  hidden select's `.value` in agreement in both directions:
+  - **Native → visual:** `syncFromNativeValue()` reads the hidden
+    select's current value and marks the matching `<li>`
+    selected/aria-selected, called once on init (so a persisted setting
+    from `saveSettings()` shows correctly, not just the HTML's literal
+    default) and after every choice.
+  - **Visual → native:** clicking (or Enter/Space-selecting) an `<li>`
+    sets `nativeSelect.value` and fires `new Event('change', {bubbles:
+    true})` on it - `settings.js`'s existing listener does the rest,
+    completely unmodified.
+  - Keyboard support (Arrow Up/Down to move a `.pending` highlight,
+    Enter/Space to commit, Escape to close), outside-click-to-close,
+    `aria-expanded`/`aria-haspopup`/`role="listbox"` wired for screen
+    readers, matching the keyboard-nav pass already done elsewhere on
+    this panel.
+- `src/main.js` - one new import, `import './ui/res-select.js'`,
+  placed *after* the `systems/settings.js` import block specifically:
+  settings.js sets `settingsRes.value` from the persisted setting at
+  its own top-level (module) execution time, and `res-select.js` reads
+  that value in its own top-level `syncFromNativeValue()` call - import
+  order matters here for the initial render to show the right item
+  selected instead of always defaulting to "Native".
+
+**Verified:** `node --check` clean on `res-select.js` and `main.js`.
+Cross-checked every `id`/class the new script queries
+(`settings-res`, `res-select`, `res-select-trigger`, `res-select-options`,
+`.custom-select-value`) against the real markup - all present, all
+singular. Confirmed via reading `settings.js` directly that its
+`change` listener is the only DOM-facing code touching `#settings-res`,
+so nothing about this change is a duplicate of what `applyResolution()`
+already does - that function still owns the actual
+`renderer.setPixelRatio(baseDPR * settingsResScale)` effect; this round
+only replaces how the *value* gets picked, not what happens once it's
+chosen.
+
+**Not yet browser-verified** - same standing gap as everything else in
+this file. Specifically unverified live: does the themed list actually
+open/close/position correctly relative to the rest of the Settings
+panel's torn-paper layout, does keyboard nav feel right, and does
+choosing an option still visibly change render resolution the way it
+did through the old native select.
 
 ---
 

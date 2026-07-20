@@ -56,40 +56,34 @@ function mulberry32(seed){
 }
 function chunkKey(cx,cz){ return cx+'_'+cz; }
 
-function loadChunk(cx,cz){
+// Generator version of loadChunk: same generation logic and same
+// deterministic per-chunk PRNG/output as before, but yields after each
+// individual object placement instead of building the whole chunk in
+// one synchronous call. updateWorldStream() below steps this a small,
+// fixed number of times per frame (STEPS_PER_FRAME) regardless of chunk
+// boundaries - this is what actually fixes the "random stutter while
+// walking, unrelated to resolution" symptom: the old CHUNKS_PER_FRAME=2
+// budget could still burst up to ~20 buildings+extras worth of full
+// mesh/material construction into a single frame if two adjacent chunks
+// both needed loading; per-object budgeting makes worst-case per-frame
+// cost constant no matter how much a given chunk needs.
+function* loadChunkSteps(cx,cz){
   const key = chunkKey(cx,cz);
   if(activeChunks.has(key)) return;
   const centerX = (cx+0.5)*CHUNK_SIZE, centerZ = (cz+0.5)*CHUNK_SIZE;
   const entry = { handles: [] };
   activeChunks.set(key, entry);
-  // Only skip generation if the WHOLE chunk sits inside the hand-authored
-  // downtown - checked via the farthest corner, not just the center. Using
-  // just the center meant a whole ring of chunks straddling the downtown
-  // boundary could come back completely empty even though most of their
-  // area was outside downtown - exactly the "sparse near downtown, dense
-  // further out" unevenness.
   const half = CHUNK_SIZE*0.5;
   const farCornerDist = Math.hypot(Math.abs(centerX)+half, Math.abs(centerZ)+half);
   if(farCornerDist < DOWNTOWN_EDGE) return;
 
   const rand = mulberry32((cx*73856093) ^ (cz*19349663) ^ 0x9e3779b9);
-  const track = []; // shared facade-instance track for every building this chunk places
-  const spots = []; // lit-window world spots this chunk's buildings expose, for the window-figure system
-  const footprints = []; // {x,z,hw,hd} for every building/ruin this chunk places, for the minimap
+  const track = [];
+  const spots = [];
+  const footprints = [];
 
-  const buildingCount = 6 + Math.floor(rand()*4); // was 3-5 - that plus only a 0.85/0.35 chance of one ruin/lamp per 70x70 chunk read as a mostly-empty plain; denser packing plus the clutter scatter below fills the ground instead of just the skyline
+  const buildingCount = 6 + Math.floor(rand()*4);
   for(let i=0;i<buildingCount;i++){
-    // resample instead of silently dropping the candidate when it lands
-    // inside downtown - previously a dropped candidate just meant one fewer
-    // building for that chunk, thinning density unevenly near the boundary.
-    // Also resample on overlap with any building already placed this chunk -
-    // this loop previously only ever checked downtown/exit-road exclusion,
-    // never checked candidates against each other, so buildings could (and
-    // did) land directly on top of one another with zero rejection. w/d
-    // aren't known until inside the loop, so the overlap check samples w/d
-    // first, then retries position+size together against the existing
-    // footprints (a fixed footprint sampled before checking would keep
-    // colliding with the same spot every retry for oddly-shaped candidates).
     let lx, lz, w, d, h, tries = 0, overlaps = true;
     do {
       lx = centerX + (rand()-0.5)*CHUNK_SIZE*0.95;
@@ -97,9 +91,6 @@ function loadChunk(cx,cz){
       w = 6+rand()*7; d = 6+rand()*7; h = 5+rand()*20;
       tries++;
       if(Math.hypot(lx,lz) < DOWNTOWN_EDGE || isOnExitRoad(lx,lz)){ overlaps = true; continue; }
-      // AABB overlap test against every footprint placed so far this chunk,
-      // with a small gap margin so buildings don't end up wall-to-wall
-      // either - reads as an actual street grid instead of a jammed cluster
       const hw = w/2+1.2, hd = d/2+1.2;
       overlaps = footprints.some(f =>
         Math.abs(lx-f.x) < hw+f.hw && Math.abs(lz-f.z) < hd+f.hd
@@ -107,36 +98,39 @@ function loadChunk(cx,cz){
         Math.abs(lx-f.x) < hw+f.hw && Math.abs(lz-f.z) < hd+f.hd
       );
     } while(overlaps && tries < 10);
-    if(overlaps) continue; // give up only after retries - rare, and just means a slightly emptier lot rather than a stacked building
+    if(overlaps) continue;
     const handle = addBuilding(lx, lz, w, d, h, { track, spots });
     entry.handles.push({ type:'building', handle });
     footprints.push({ x:lx, z:lz, hw:w/2, hd:d/2, h, type: handle.isRelay ? 'relay' : 'building' });
+    yield;
   }
   if(rand() < 0.95){
     const lx = centerX + (rand()-0.5)*CHUNK_SIZE, lz = centerZ + (rand()-0.5)*CHUNK_SIZE;
     const handle = addRuin(lx, lz, Math.floor(rand()*3));
     entry.handles.push({ type:'ruin', handle });
     footprints.push({ x:lx, z:lz, hw:2.5, hd:2.5, h:3.2, type:'ruin' });
+    yield;
   }
   if(rand() < 0.4){
     const lx2 = centerX + (rand()-0.5)*CHUNK_SIZE, lz2 = centerZ + (rand()-0.5)*CHUNK_SIZE;
     const handle2 = addRuin(lx2, lz2, Math.floor(rand()*3));
     entry.handles.push({ type:'ruin', handle:handle2 });
     footprints.push({ x:lx2, z:lz2, hw:2.5, hd:2.5, h:3.2, type:'ruin' });
+    yield;
   }
   if(rand() < 0.7){
     const lx = centerX + (rand()-0.5)*CHUNK_SIZE, lz = centerZ + (rand()-0.5)*CHUNK_SIZE;
     const handle = addLamp(lx, lz);
     entry.handles.push({ type:'lamp', handle });
+    yield;
   }
-  // rare landmark structure, deliberately much less common than ruins/lamps
-  // so it reads as a notable sight rather than routine clutter
   if(rand() < 0.12){
     const lx = centerX + (rand()-0.5)*CHUNK_SIZE, lz = centerZ + (rand()-0.5)*CHUNK_SIZE;
     const bridgeAng = rand()*Math.PI*2;
     const handle = addBridge(lx, lz, bridgeAng);
-    entry.handles.push({ type:'ruin', handle }); // reuses the ruin/building disposal branch below - same group+obstacleEntry shape
+    entry.handles.push({ type:'ruin', handle });
     footprints.push({ x:lx, z:lz, hw:4.5, hd:1.5, h:1.8, type:'ruin' });
+    yield;
   }
   registerChunkMinimapBuildings(key, footprints);
   scatterChunkClutter(centerX, centerZ, track);
@@ -144,6 +138,14 @@ function loadChunk(cx,cz){
   entry.windowSpots = spots;
   updateFacadePoolCounts();
   registerChunkWindowSpots(key, spots);
+}
+
+function loadChunk(cx,cz){
+  // Kept as a synchronous wrapper (drains the generator in one go) - used
+  // by anything that still needs a whole chunk built immediately (there's
+  // no such caller today, but this keeps the function's old contract
+  // intact rather than deleting it outright, since it's exported).
+  for(const _ of loadChunkSteps(cx,cz)){ /* drain */ }
 }
 
 function unloadChunk(key){
@@ -167,18 +169,32 @@ function unloadChunk(key){
 }
 
 let lastStreamCx = null, lastStreamCz = null;
-// Chunk loading was the real cause of the load-time and mid-walk stutter:
-// this used to call loadChunk() synchronously for every chunk in the full
-// LOAD_RADIUS_CHUNKS disc (up to 25 chunks) the instant the player crossed
-// into a new chunk - each loadChunk() builds real geometry (buildings,
-// props, minimap registration), so that was a single-frame burst of up to
-// 25 chunks' worth of mesh construction. Now it just enqueues whichever
-// chunks are missing (nearest first) into pendingLoads, and a small,
-// fixed number actually get built per frame via the loop in
-// updateWorldStream() below - so a chunk-boundary crossing costs a few
-// frames of small work instead of one frame of a lot of work.
-const CHUNKS_PER_FRAME = 2;
+// Chunk loading was the real cause of the load-time and mid-walk stutter,
+// twice over:
+// 1. Originally called loadChunk() synchronously for every chunk in the
+//    full LOAD_RADIUS_CHUNKS disc (up to 25 chunks) the instant the player
+//    crossed into a new chunk - a single-frame burst of up to 25 chunks'
+//    worth of mesh construction.
+// 2. Fixed to CHUNKS_PER_FRAME=2 whole chunks/frame - better, but each
+//    chunk can still place up to ~9 buildings plus ruins/lamp/bridge/
+//    clutter (all real geometry+material construction) in one call, so
+//    two adjacent chunks needing load on the same frame could still burst
+//    ~20 objects' worth of mesh building into a single frame. This is what
+//    "random stutter while walking, same at any resolution" actually was -
+//    pure CPU work from mesh construction, triggered by crossing a chunk
+//    boundary rather than any fixed timer, so it reads as unpredictable
+//    even though it's fully deterministic given player position.
+//
+// Now: loadChunkSteps() is a generator that yields after each individual
+// object placement (see streaming.js's loadChunkSteps above), and this
+// function steps a small, fixed number of those placements per frame
+// (STEPS_PER_FRAME) regardless of chunk boundaries or how many chunks are
+// queued - so worst-case per-frame world-gen cost is now constant instead
+// of scaling with "how much did the chunk(s) that just came into range
+// happen to need".
+const STEPS_PER_FRAME = 3;
 let pendingLoads = [];
+let currentGen = null; // in-progress loadChunkSteps() generator, if any
 function updateWorldStream(){
   const cx = Math.floor(state.playerX/CHUNK_SIZE), cz = Math.floor(state.playerZ/CHUNK_SIZE);
   if(cx!==lastStreamCx || cz!==lastStreamCz){
@@ -197,6 +213,17 @@ function updateWorldStream(){
     // drop any still-pending chunks the player has since walked away from
     // (re-evaluated below anyway) and replace with the fresh needed list
     pendingLoads = needed;
+    // NOTE: currentGen (if any) is deliberately left running rather than
+    // abandoned here, even if its chunk fell out of range - loadChunkSteps()
+    // already added a (possibly partial) entry to activeChunks the moment
+    // it started, and only calls registerChunkMinimapBuildings/
+    // scatterChunkClutter/registerChunkWindowSpots at the very end. Nulling
+    // currentGen mid-run would leave that chunk stuck forever as a partially-
+    // built, never-registered, never-unloaded ghost entry. Letting it finish
+    // (a handful of frames at most, given STEPS_PER_FRAME) is simpler and
+    // correct; if the player has genuinely moved out of its unload radius by
+    // the time it completes, the next boundary crossing's unload check
+    // below will clean it up normally like any other stale chunk.
 
     for(const key of Array.from(activeChunks.keys())){
       const [kx,kz] = key.split('_').map(Number);
@@ -204,12 +231,20 @@ function updateWorldStream(){
       if(ddx*ddx+ddz*ddz > UNLOAD_RADIUS_CHUNKS*UNLOAD_RADIUS_CHUNKS) unloadChunk(key);
     }
   }
-  // process a small, fixed budget of the queue every frame regardless of
-  // whether the player just crossed a boundary - this is what actually
-  // spreads the cost out instead of front-loading it
-  for(let i=0; i<CHUNKS_PER_FRAME && pendingLoads.length; i++){
-    const next = pendingLoads.shift();
-    if(!activeChunks.has(`${next.cx}_${next.cz}`)) loadChunk(next.cx, next.cz);
+  // process a small, fixed budget of individual object placements every
+  // frame - this is what actually spreads the cost out instead of
+  // front-loading it, at chunk-boundary granularity or finer.
+  let steps = STEPS_PER_FRAME;
+  while(steps > 0){
+    if(!currentGen){
+      if(!pendingLoads.length) break;
+      const next = pendingLoads.shift();
+      if(activeChunks.has(`${next.cx}_${next.cz}`)) continue;
+      currentGen = loadChunkSteps(next.cx, next.cz);
+    }
+    const { done } = currentGen.next();
+    steps--;
+    if(done) currentGen = null;
   }
 }
 

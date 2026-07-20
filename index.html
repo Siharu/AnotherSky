@@ -1134,14 +1134,21 @@
 
   #top-bar{
     position:absolute; top:calc(10px + var(--safe-t)); left:calc(14px + var(--safe-l)); right:calc(14px + var(--safe-r));
-    display:flex; justify-content:space-between; align-items:center; color:var(--bone);
+    display:flex; justify-content:flex-start; align-items:center; color:var(--bone);
+    /* Radio/hub buttons live in the LEFT slot on purpose (see
+       #icon-buttons order:-1 below) - #minimap is pinned top-right at
+       the same 14px inset and used to visually collide with these once
+       it went .visible after the radio pickup. Keeping this row
+       left-aligned rather than space-between so the right side stays
+       clear for the minimap regardless of what else ever gets added
+       here. */
   }
   #frag-counter{
     font-size:.68rem; letter-spacing:.22em; opacity:.7; background:rgba(0,0,0,0.4);
     padding:7px 14px 7px 12px; border:1px solid rgba(201,194,182,0.2); border-left:2px solid var(--rust);
     font-variant-numeric:tabular-nums;
   }
-  #icon-buttons{ display:flex; gap:8px; pointer-events:auto; position:relative; }
+  #icon-buttons{ display:flex; gap:8px; pointer-events:auto; position:relative; order:-1; }
 
   /* torn lined-paper treatment, same DNA as .mb-paper on the main menu
      buttons - visible ruled-line texture (not the near-invisible one on

@@ -119,6 +119,7 @@ comment for why).
 | `src/systems/save.js` | `writeSave()`, `deleteSave()`, `restoreFromSave()` |
 | `src/systems/settings.js` | sensitivity/volume/brightness/resolution persistence |
 | `src/ui/menu.js` | pause/hub open-close (no longer touches `state.started` - see recent fix) |
+| `src/ui/res-select.js` | **added post-migration** (not part of the original monolith split) - themed dropdown trigger/list that mirrors the hidden native `#settings-res` `<select>` in both directions and dispatches a real `change` event on it; owns zero resolution-scale state itself (that stays in `systems/settings.js`'s `applyResolution()`) - purely the visual layer over an otherwise-unstyleable native OS dropdown. See `docs/HANDOFF.md` |
 | `src/ui/memories.js`, `radiolog.js`, `inventory.js`, `help.js` | hub sub-panels |
 | `src/ui/hud.js` | icon buttons, minimap, autosave indicator |
 | `src/ui/titleScreen.js` | wake sequence, menu idle-breakdown |
