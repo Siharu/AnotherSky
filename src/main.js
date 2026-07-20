@@ -62,7 +62,7 @@ import {
 } from './ui/menu.js';
 import { setTitleScreenActive, tickMenuIdle, registerMainRefs } from './ui/titleScreen.js';
 import { updateDread } from './systems/dread.js';
-import { updatePlayer } from './entities/player.js';
+import { updatePlayer, registerPlayerRefs } from './entities/player.js';
 import { pickFrom } from './utils/math.js';
 import {
   bearingToCompassAngle, pickSituationalRadioLine, broadcastRadio,
@@ -2651,6 +2651,17 @@ export function updatePlayerVoice(dt){
 export const _tmpForward = new THREE.Vector3();
 export const _tmpRight = new THREE.Vector3();
 export const Y_AXIS = new THREE.Vector3(0,1,0);
+
+// See player.js's file header for why this replaced a static circular
+// import: this is the last of the two live main.js<->module cycles found
+// in a full-codebase sweep (the other was titleScreen.js, HOTFIX #5) -
+// closing it here since updatePlayer() is the single hottest per-frame
+// path in the game and the same persistent-TDZ risk applies.
+registerPlayerRefs({
+  keys, _tmpForward, _tmpRight, Y_AXIS, orbMeshes, RADIO_TOWER_POS,
+  RADIO_PICKUP_POS, getRadioPickupMesh: () => radioPickupMesh,
+  updateCompass, updatePlayerVoice, updateRadioTower
+});
 
 /* ---------- MAIN LOOP ----------
    clock now comes from core/scene.js (real module extraction). */

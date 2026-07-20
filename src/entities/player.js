@@ -38,11 +38,36 @@ import { updateWorldStream } from '../world/streaming.js';
 import { updateFowAt } from '../ui/bigmap.js';
 import { updateMinimap } from '../ui/hud.js';
 import { playWetFootstep } from '../systems/audio.js';
-import {
-  keys, _tmpForward, _tmpRight, Y_AXIS, orbMeshes, RADIO_TOWER_POS,
-  radioPickupMesh, RADIO_PICKUP_POS,
-  updateCompass, updatePlayerVoice, updateRadioTower
-} from '../main.js';
+// keys/_tmpForward/_tmpRight/Y_AXIS/orbMeshes/RADIO_TOWER_POS and the
+// three functions above come in via registerPlayerRefs(), called once
+// from main.js after they exist, instead of a static import back into
+// main.js - same fix as titleScreen.js's HOTFIX #5 (see that file's
+// header), applied here before this cycle had a chance to cause the
+// same persistent-TDZ/frame-killing-lag bug in the single hottest path
+// in the game (updatePlayer runs every frame). getRadioPickupMesh stays
+// a function, same reasoning as titleScreen.js - it's a `let` in main.js
+// that's reassigned repeatedly (built once, nulled on pickup), so a
+// snapshot taken at registration time would go stale. Everything else
+// here (keys, _tmpForward, _tmpRight, Y_AXIS, orbMeshes, RADIO_TOWER_POS)
+// is an `export const` in main.js that's mutated in place but never
+// reassigned, so a one-time reference is safe to hold onto directly.
+let keys = {}, _tmpForward = null, _tmpRight = null, Y_AXIS = null;
+let orbMeshes = [], RADIO_TOWER_POS = null, RADIO_PICKUP_POS = null;
+let getRadioPickupMesh = () => null;
+let updateCompass = () => {}, updatePlayerVoice = () => {}, updateRadioTower = () => {};
+export function registerPlayerRefs(refs){
+  keys = refs.keys;
+  _tmpForward = refs._tmpForward;
+  _tmpRight = refs._tmpRight;
+  Y_AXIS = refs.Y_AXIS;
+  orbMeshes = refs.orbMeshes;
+  RADIO_TOWER_POS = refs.RADIO_TOWER_POS;
+  RADIO_PICKUP_POS = refs.RADIO_PICKUP_POS;
+  getRadioPickupMesh = refs.getRadioPickupMesh;
+  updateCompass = refs.updateCompass;
+  updatePlayerVoice = refs.updatePlayerVoice;
+  updateRadioTower = refs.updateRadioTower;
+}
 
 let lastStepPhase = -1;
 
@@ -118,5 +143,5 @@ export function updatePlayer(dt){
   updateCompass();
   updatePlayerVoice(dt);
   updateRadioTower(dt);
-  updateMinimap(radioPickupMesh, orbMeshes, RADIO_PICKUP_POS, RADIO_TOWER_POS);
+  updateMinimap(getRadioPickupMesh(), orbMeshes, RADIO_PICKUP_POS, RADIO_TOWER_POS);
 }
