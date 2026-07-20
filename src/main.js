@@ -751,7 +751,7 @@ function generateDistrict(){
         if(tooCloseToSpawn(bx,bz,w/2,d/2)) continue;
         if(overlapsExisting(bx,bz,w/2,d/2)) continue;
         const h1 = addBuilding(bx, bz, w, d, h, { spots: downtownWindowSpots });
-        downtownBuildings.push({ group:h1.group, x:bx, z:bz });
+        downtownBuildings.push({ group:h1.group, detailGroup:h1.detailGroup, x:bx, z:bz });
         minimapBuildings.push({ x:bx, z:bz, hw:w/2, hd:d/2, h, type: h1.isRelay ? 'relay' : 'building' });
 
         if(Math.random()<0.4){
@@ -762,7 +762,7 @@ function generateDistrict(){
           if(tooCloseToSpawn(bx2,bz2,w2/2,d2/2)) continue;
           if(overlapsExisting(bx2,bz2,w2/2,d2/2)) continue;
           const h2handle = addBuilding(bx2, bz2, w2, d2, h2, { spots: downtownWindowSpots });
-          downtownBuildings.push({ group:h2handle.group, x:bx2, z:bz2 });
+          downtownBuildings.push({ group:h2handle.group, detailGroup:h2handle.detailGroup, x:bx2, z:bz2 });
           minimapBuildings.push({ x:bx2, z:bz2, hw:w2/2, hd:d2/2, h:h2, type: h2handle.isRelay ? 'relay' : 'building' });
         }
       }
@@ -783,6 +783,15 @@ rebuildActiveWindowSpots();
 // chunk-streamed area / forest. Only re-evaluated when the player has
 // moved far enough to matter, not every single frame.
 const DOWNTOWN_CULL_DIST = 240;
+// LOD switch: past this distance, keep the building's body/base/door
+// silhouette (and its already-instanced facade windows, which cost
+// nothing extra either way) but drop the ~10 individually-drawn greeble
+// meshes per building (pilasters, cornice, door trim, roof tank/lip) -
+// they're all sub-unit-thin or roofline-height, so they don't read past
+// mid-range anyway, but each one is its own draw call. Comfortably
+// inside DOWNTOWN_CULL_DIST so buildings gain detail before they'd be
+// popping into existence at all, not right as they appear.
+const LOD_DETAIL_DIST = 90;
 let lastCullX = Infinity, lastCullZ = Infinity;
 function updateDowntownVisibility(){
   const dx = state.playerX-lastCullX, dz = state.playerZ-lastCullZ;
@@ -790,7 +799,9 @@ function updateDowntownVisibility(){
   lastCullX = state.playerX; lastCullZ = state.playerZ;
   for(const b of downtownBuildings){
     const ddx = b.x-state.playerX, ddz = b.z-state.playerZ;
-    b.group.visible = (ddx*ddx+ddz*ddz) < DOWNTOWN_CULL_DIST*DOWNTOWN_CULL_DIST;
+    const distSq = ddx*ddx+ddz*ddz;
+    b.group.visible = distSq < DOWNTOWN_CULL_DIST*DOWNTOWN_CULL_DIST;
+    if(b.detailGroup) b.detailGroup.visible = distSq < LOD_DETAIL_DIST*LOD_DETAIL_DIST;
   }
 }
 // permanent downtown clutter scatter - wider inner radius (4, was 10) so

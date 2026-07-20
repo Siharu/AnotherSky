@@ -235,27 +235,41 @@ function addBuilding(x,z,w,d,h,opts){
   base.position.y = baseH/2;
   group.add(base);
 
+  // ---------- LOD: fine detail vs. silhouette ----------
+  // Everything added directly to `group` from here on used to go
+  // straight in with the body/base - fine up close, but every mesh here
+  // is its own draw call and none of it reads at mid-to-long range
+  // (pilasters/cornice/door trim are sub-half-unit thin; roof tanks sit
+  // above the sightline for most of downtown's ~200-unit radius). Routed
+  // into `detailGroup` instead so callers can hide just this layer past a
+  // mid distance while keeping the body/base/door-recess silhouette (and
+  // the already-instanced facade windows, unaffected either way) visible
+  // all the way out to DOWNTOWN_CULL_DIST. See main.js's
+  // updateDowntownVisibility() for the distance switch itself.
+  const detailGroup = new THREE.Group();
+  group.add(detailGroup);
+
   const doorW = Math.min(1.6, w*0.22), doorH = Math.min(2.6, baseH*0.85);
   const doorRecess = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 0.5), new THREE.MeshBasicMaterial({color:0x030204}));
   doorRecess.position.set((Math.random()-0.5)*w*0.4, doorH/2, d/2+0.02);
-  group.add(doorRecess);
+  group.add(doorRecess); // kept on the silhouette layer - the one greeble that reads as gameplay (entrance) at any distance
   const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(doorW+0.24, doorH+0.24, 0.15), doorFrameMat);
   doorFrame.position.set(doorRecess.position.x, doorH/2, d/2-0.08);
-  group.add(doorFrame);
+  detailGroup.add(doorFrame);
   const doorThreshold = new THREE.Mesh(new THREE.BoxGeometry(doorW+0.5, 0.08, 0.5), doorFrameMat);
   doorThreshold.position.set(doorRecess.position.x, 0.04, d/2+0.2);
-  group.add(doorThreshold);
+  detailGroup.add(doorThreshold);
 
   const pilasterMat = buildingDarkMat;
   for(const cx of [-1,1]) for(const cz of [-1,1]){
     const p = new THREE.Mesh(new THREE.BoxGeometry(0.35,h,0.35), pilasterMat);
     p.position.set(cx*(w/2-0.1), h/2, cz*(d/2-0.1));
-    group.add(p);
+    detailGroup.add(p);
   }
 
   const cornice = new THREE.Mesh(new THREE.BoxGeometry(w+0.5, 0.4, d+0.5), buildingDarkMat);
   cornice.position.y = h - 0.2;
-  group.add(cornice);
+  detailGroup.add(cornice);
 
   const roofRoll = Math.random();
   if(h > 12 && roofRoll < 0.4){
@@ -263,15 +277,15 @@ function addBuilding(x,z,w,d,h,opts){
     const tierH = 1.6+Math.random()*3.2;
     const tier = new THREE.Mesh(new THREE.BoxGeometry(tierW, tierH, tierD), wallMat);
     tier.position.set((Math.random()-0.5)*(w-tierW)*0.5, h+tierH/2, (Math.random()-0.5)*(d-tierD)*0.5);
-    group.add(tier);
+    detailGroup.add(tier);
     const tierCap = new THREE.Mesh(new THREE.BoxGeometry(tierW+0.3, 0.3, tierD+0.3), buildingDarkMat);
     tierCap.position.set(tier.position.x, h+tierH-0.15, tier.position.z);
-    group.add(tierCap);
+    detailGroup.add(tierCap);
   } else if(roofRoll < 0.7){
     const lipH = 0.5+Math.random()*0.5;
     const lip = new THREE.Mesh(new THREE.BoxGeometry(w-0.4, lipH, d-0.4), buildingDarkMat);
     lip.position.y = h+lipH/2-0.05;
-    group.add(lip);
+    detailGroup.add(lip);
   }
 
   const floors = Math.max(1, Math.floor((h-baseH-0.6)/GRID_FLOOR_H));
@@ -286,12 +300,12 @@ function addBuilding(x,z,w,d,h,opts){
     const tankH = 1.2+Math.random()*1.6;
     const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.9,0.9,tankH,8), buildingDarkMat);
     tank.position.set((Math.random()-0.5)*w*0.4, h+tankH/2, (Math.random()-0.5)*d*0.4);
-    group.add(tank);
+    detailGroup.add(tank);
   } else {
     const slabH = 0.8+Math.random()*1.2;
     const slab = new THREE.Mesh(new THREE.BoxGeometry(w*0.4,slabH,d*0.35), buildingDarkMat);
     slab.position.set((Math.random()-0.5)*w*0.3, h+slabH/2, (Math.random()-0.5)*d*0.3);
-    group.add(slab);
+    detailGroup.add(slab);
   }
 
   if(isRelay){
@@ -302,7 +316,7 @@ function addBuilding(x,z,w,d,h,opts){
   scene.add(group);
   const obstacleEntry = { x, z, type:'rect', hw: w/2 + 0.35, hd: d/2 + 0.35, radius: Math.hypot(w/2, d/2) + 0.4 };
   obstacles.push(obstacleEntry);
-  return { group, obstacleEntry, facadeTrack, isRelay };
+  return { group, detailGroup, obstacleEntry, facadeTrack, isRelay };
 }
 
 function updateFacadePoolCounts(){
