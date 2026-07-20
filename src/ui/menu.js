@@ -16,7 +16,7 @@
 // can open. That's the whole rule.
 //
 // Scope kept deliberately narrow: this file owns hubOverlay,
-// hubOpen, openHub()/closeHub(), and showHubFlavor() -
+// isHubOpen(), openHub()/closeHub(), and showHubFlavor() -
 // the self-contained "is the menu hub open" state machine. The
 // individual hub-button click handlers (settings/load/quit/memories/
 // radiolog/inventory/help) and the Escape-key priority chain are NOT
@@ -40,19 +40,30 @@ export function isGameplayActive(){
   return !!(hud && hud.classList.contains('visible'));
 }
 
-export let hubOpen = false;
+// hubOpen used to be a hand-maintained boolean, guarding openHub() on
+// `if(hubOpen) return`. Several call sites in main.js (settings/memories/
+// radiolog/inventory/help) hide and restore the hub by toggling
+// hubOverlay's 'open' class directly, bypassing openHub()/closeHub() -
+// so hubOpen could end up true while the overlay's actual class was
+// gone, and every subsequent click on hub-btn would silently no-op
+// forever (click logged, nothing rendered - no way to tell from the
+// DOM alone that the flag was even the reason). Same shape of bug as
+// the old gameHasBegun flag above. Fix is the same one: stop tracking
+// a shadow variable and read the DOM's own class instead, so nothing
+// can desync from it.
+export function isHubOpen(){
+  return hubOverlay.classList.contains('open');
+}
 
 export function openHub(){
   if(!isGameplayActive()){ console.warn('[menu] hub-btn click ignored: HUD is not visible yet (game hasn\'t started)'); return; }
-  if(hubOpen) return;
+  if(isHubOpen()) return;
   if(bigmapOverlay && bigmapOverlay.classList.contains('open')) return; // don't stack over the map
-  hubOpen = true;
   hubOverlay.classList.add('open');
 }
 
 export function closeHub(){
   hubOverlay.classList.remove('open');
-  hubOpen = false;
 }
 
 export function showHubFlavor(text){

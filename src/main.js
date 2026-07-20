@@ -61,7 +61,7 @@ import {
 // hidden select already reflects the persisted value when this runs.
 import './ui/res-select.js';
 import {
-  hubOverlay, isGameplayActive, hubOpen,
+  hubOverlay, isGameplayActive,
   openHub, closeHub, showHubFlavor
 } from './ui/menu.js';
 import { setTitleScreenActive, tickMenuIdle, registerMainRefs } from './ui/titleScreen.js';
@@ -2236,7 +2236,7 @@ titleScreen.addEventListener('keydown', startMenuAmbience, {once:true});
    separately hand-set boolean (an earlier gameHasBegun flag needed
    three call sites to stay in sync and was the actual cause of a
    "menu button does nothing" bug - see menu.js's header comment).
-   hubOverlay/hubOpen/openHub/closeHub/showHubFlavor/
+   hubOverlay/isHubOpen/openHub/closeHub/showHubFlavor/
    isGameplayActive now live in ui/menu.js (Wave 3 - see
    docs/HANDOFF.md), imported at top-level. The button wiring below
    stays here since it reaches into settings/save/memories/radiolog/
