@@ -796,6 +796,51 @@
     width:100%; background:rgba(255,255,255,0.05); color:rgba(201,194,182,0.5);
     border:1px solid rgba(201,194,182,0.2); padding:8px; font-family:var(--font-mono); font-size:.7rem;
   }
+  /* ---------- CUSTOM SELECT (Resolution dropdown) ----------
+     Replaces a bare native <select> - see index.html's comment on this
+     control for why: the native OPEN dropdown list can't be restyled in
+     any browser, so it was the one control on this panel still looking
+     like an unthemed OS default next to the blood-slider/rust-toggle
+     treatment everywhere else here. */
+  .custom-select{ position:relative; }
+  .custom-select-trigger{
+    width:100%; display:flex; align-items:center; justify-content:space-between;
+    background:
+      radial-gradient(circle at 12% 15%, rgba(255,255,255,0.05) 0%, transparent 50%),
+      rgba(201,194,182,0.04);
+    color:var(--bone); border:1px solid rgba(201,194,182,0.25);
+    padding:10px 12px; font-family:var(--font-mono); font-size:.68rem;
+    letter-spacing:.12em; text-transform:uppercase; cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .custom-select-trigger:hover, .custom-select-trigger:focus-visible{
+    border-color:rgba(201,194,182,0.5); outline:none;
+  }
+  .custom-select.open .custom-select-trigger{ border-color:var(--rust); }
+  .custom-select-arrow{
+    opacity:.55; font-size:.6rem; transition:transform .15s ease; margin-left:8px;
+  }
+  .custom-select.open .custom-select-arrow{ transform:rotate(180deg); opacity:.9; }
+  .custom-select-options{
+    position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:5;
+    list-style:none; margin:0; padding:4px;
+    background:rgba(8,7,9,0.97);
+    border:1px solid rgba(201,194,182,0.28);
+    box-shadow:0 10px 24px rgba(0,0,0,0.55);
+    opacity:0; pointer-events:none; transform:translateY(-4px);
+    transition:opacity .12s ease, transform .12s ease;
+  }
+  .custom-select.open .custom-select-options{ opacity:1; pointer-events:auto; transform:translateY(0); }
+  .custom-select-options li{
+    padding:9px 12px; font-family:var(--font-mono); font-size:.66rem;
+    letter-spacing:.12em; text-transform:uppercase; color:rgba(201,194,182,0.7);
+    cursor:pointer; transition:background .1s ease, color .1s ease;
+  }
+  .custom-select-options li:hover, .custom-select-options li.pending{
+    background:rgba(122,31,31,0.16); color:var(--bone);
+  }
+  .custom-select-options li.selected{ color:var(--rust); }
+  .custom-select-options li.selected::after{ content:' \2014 current'; opacity:.5; font-size:.9em; }
   .panel-close{
     display:block; margin:26px auto 0; background:none; border:1px solid rgba(201,194,182,0.3);
     color:var(--bone); font-family:var(--font-mono); letter-spacing:.2em; text-transform:uppercase;
@@ -1468,7 +1513,33 @@
       </div>
       <div class="panel-row">
         <label><span>Resolution</span></label>
-        <select class="panel-select" id="settings-res">
+        <!-- Custom dropdown: the native <select> below is the actual
+             accessible form control (keyboard/screen-reader fallback,
+             and settings.js's existing change-listener keeps working
+             completely unchanged) but visually hidden - the browser's
+             native OPEN dropdown list can't be styled at all in any
+             browser, which is what was actually breaking the panel's
+             theming (everything else here - sliders, toggles, the torn-
+             paper panel chrome itself - is custom-styled; this was the
+             one native, unthemed control). This div-based trigger +
+             list replaces the visible interaction; res-select.js keeps
+             them in sync in both directions and fires a real 'change'
+             event on the hidden select so nothing downstream needed to
+             change. -->
+        <div class="custom-select" id="res-select">
+          <button type="button" class="custom-select-trigger" id="res-select-trigger"
+                  aria-haspopup="listbox" aria-expanded="false">
+            <span class="custom-select-value">Native</span>
+            <span class="custom-select-arrow">▾</span>
+          </button>
+          <ul class="custom-select-options" id="res-select-options" role="listbox" tabindex="-1">
+            <li role="option" data-value="1" aria-selected="true" class="selected">Native</li>
+            <li role="option" data-value="0.85" aria-selected="false">High</li>
+            <li role="option" data-value="0.65" aria-selected="false">Medium</li>
+            <li role="option" data-value="0.5" aria-selected="false">Low</li>
+          </ul>
+        </div>
+        <select class="panel-select" id="settings-res" hidden aria-hidden="true" tabindex="-1">
           <option value="1">Native</option>
           <option value="0.85">High</option>
           <option value="0.65">Medium</option>
