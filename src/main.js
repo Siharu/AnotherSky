@@ -56,6 +56,10 @@ import {
   applyResolution, settingsOverlay, settingsOpenedFromHub,
   setSettingsOpenedFromHub, closeSettingsOverlay, saveSettings
 } from './systems/settings.js';
+// Themed dropdown for the Resolution setting (visual-only, drives the
+// hidden native <select> above). Must import after settings.js so the
+// hidden select already reflects the persisted value when this runs.
+import './ui/res-select.js';
 import {
   hubOverlay, isGameplayActive, hubOpen,
   openHub, closeHub, showHubFlavor
