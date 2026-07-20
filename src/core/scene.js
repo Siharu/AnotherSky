@@ -57,6 +57,27 @@ try{
 }
 renderer.setPixelRatio(baseDPR);
 renderer.setSize(window.innerWidth, window.innerHeight);
+
+// Which physical GPU is actually rendering this - not always the one you'd
+// expect. Laptops with hybrid graphics (NVIDIA Optimus etc.) commonly let
+// the browser fall back to the weak integrated chip for a given tab even
+// with powerPreference:'high-performance' requested above - that's a
+// request, not a guarantee, and Windows/the browser can silently override
+// it. A capable discrete GPU choking on a fairly ordinary Three.js scene
+// at native resolution, while the same scene is fine at a smaller window
+// size, is the classic symptom of this - so surfacing the real answer
+// beats guessing at it. console.warn (not .log) so this shows on the
+// on-screen debug badge without needing devtools - see index.html's
+// header comment on why that overlay only hooks warn/error.
+try{
+  const dbgInfo = renderer.getContext().getExtension('WEBGL_debug_renderer_info');
+  const gpuName = dbgInfo
+    ? renderer.getContext().getParameter(dbgInfo.UNMASKED_RENDERER_WEBGL)
+    : '(WEBGL_debug_renderer_info unavailable - browser is blocking this query)';
+  console.warn('[gpu] actually rendering on:', gpuName);
+}catch(err){
+  console.warn('[gpu] could not query renderer identity:', err);
+}
 // filmic tone mapping - rolls off bright highlights (lamp glow, lightning)
 // smoothly instead of clipping them, and gives the toon-shaded mid-tones a
 // bit more cinematic contrast without touching any material colors.
