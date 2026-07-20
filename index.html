@@ -838,6 +838,39 @@
      only Settings was singled out for this pass. */
   .panel-terminal{
     padding-top:40px; max-height:92vh; overflow-y:auto;
+    scrollbar-width:thin; scrollbar-color:rgba(122,31,31,0.55) rgba(0,0,0,0.3);
+  }
+  /* ---------- CUSTOM SCROLLBAR ----------
+     Settings is the one panel-box tall enough to actually scroll now, so
+     it's also the one that inherited the browser's stock white scrollbar
+     - jarring against everything else here being hand-styled. Rust track
+     dot ticks (echoes the slider segments) + a jittery thumb instead of a
+     flat bar; the flicker keyframe is a small, slow opacity/skew wobble
+     rather than a constant distraction, since this sits right next to
+     content the player is actually trying to read/adjust. */
+  .panel-terminal::-webkit-scrollbar{ width:9px; }
+  .panel-terminal::-webkit-scrollbar-track{
+    background:
+      repeating-linear-gradient(180deg, transparent 0 6px, rgba(201,194,182,0.06) 6px 7px),
+      rgba(0,0,0,0.3);
+    border-left:1px solid rgba(201,194,182,0.08);
+  }
+  .panel-terminal::-webkit-scrollbar-thumb{
+    background:linear-gradient(180deg, #8a1414, #5c0d0d);
+    border:1px solid rgba(201,194,182,0.2);
+    box-shadow:0 0 4px rgba(122,31,31,0.5);
+    animation: scrollbarJitter 3.6s ease-in-out infinite;
+  }
+  .panel-terminal::-webkit-scrollbar-thumb:hover{ background:linear-gradient(180deg, #a51a1a, #6e0f0f); }
+  @keyframes scrollbarJitter{
+    0%, 100%{ opacity:1; transform:translateX(0); }
+    41%{ opacity:1; transform:translateX(0); }
+    42%{ opacity:.55; transform:translateX(1px); }
+    43%{ opacity:1; transform:translateX(-1px); }
+    44%{ opacity:1; transform:translateX(0); }
+    78%{ opacity:1; }
+    79%{ opacity:.7; }
+    80%{ opacity:1; }
   }
   .panel-tape{
     position:absolute; width:64px; height:18px; top:6px; left:50%; margin-left:-32px;
