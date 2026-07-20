@@ -179,3 +179,102 @@ unhandled rejections and displays them on any device without
 devtools) and `docs/smoketest.js` (syntax + broken-relative-import
 check across all of `src/`, run manually via `node docs/smoketest.js`
 - not wired into any CI yet, see `docs/HANDOFF.md`'s CI/CD discussion).
+
+## Rendering performance: standard techniques vs. current state
+
+Reference list of the four standard open-world rendering-performance
+techniques (world partitioning/streaming, frustum/occlusion culling,
+object pooling, LOD), checked against what's actually implemented here
+as of this audit - so future work on frame-rate issues starts from
+what's real instead of re-discovering it:
+
+1. **World partitioning / streaming - implemented.**
+   `world/streaming.js`. The hand-authored downtown area (~200-unit
+   radius from origin) is fixed content; beyond that, the world
+   generates procedurally in a grid of chunks around the player
+   forever. `LOAD_RADIUS_CHUNKS = 2` (~140 units, generates ahead of
+   the player), `UNLOAD_RADIUS_CHUNKS = 4` (~280 units, wider than the
+   load radius on purpose - hysteresis so edge chunks don't thrash
+   load/unload every frame near the boundary). Each chunk is
+   deterministically seeded, so revisiting one regenerates identical
+   content rather than needing to cache it.
+
+2. **Object pooling - implemented.** `world/props.js` and
+   `world/buildings.js` share a pool/free-list model
+   (`updateFacadePoolCounts()`, `freeFacadeTrack()`, the
+   `_counters`/`_alloc` primitives) - chunk unload returns facade/prop
+   instance slots to shared pools instead of disposing geometry, so
+   the pools never run out no matter how far the player walks.
+   `placeRubble`/`placePuddle`/`scatterClutter`/`scatterChunkClutter`
+   in `props.js` follow the same alloc/free pattern for small scatter
+   detail.
+
+3. **Frustum culling - partially implemented, selectively disabled
+   where it would misbehave.** THREE.js's default per-mesh frustum
+   culling is left on almost everywhere. It's explicitly turned off
+   (`frustumCulled = false`) on a handful of meshes where the default
+   bounding-sphere test would cull incorrectly: `weather.js`'s rain/
+   dust/farRain (all recentered on the player every frame, so a stale
+   lazy bounding sphere doesn't track the actual visible extent) and
+   `grass.js`'s instanced mesh (real per-blade position only exists
+   post-shader, so the CPU-side bounding sphere is meaningless for it -
+   same reasoning the grass rendering technique this is based on
+   uses). **Occlusion culling (hiding things behind walls specifically,
+   as opposed to outside the camera frustum) is not implemented** -
+   `weather.js` notes rain has no per-particle occlusion against
+   roofs, worked around by keeping the rain shell's radius small
+   enough that the lack of roof occlusion isn't visually obvious
+   rather than by actually occluding it.
+
+4. **LOD (level of detail) - not implemented.** No swap-to-lower-
+   poly-at-distance system anywhere in `src/`. Everything renders at
+   full detail regardless of distance from the camera; the only
+   distance-based cost control currently in place is the streaming
+   system unloading whole chunks past `UNLOAD_RADIUS_CHUNKS`, not a
+   per-object detail reduction within the loaded radius. This is the
+   one of the four with no existing foundation to build on - it would
+   be new work, not tuning something that's already there.
+
+### Second pass: engine-agnostic checklist, checked against this project specifically
+
+A second, more detailed version of the same four techniques plus a
+fifth (scale/pacing) and a sixth (engine-specific tooling) was checked
+against this project. Kept here so a future performance pass starts
+from an accurate picture instead of re-deriving it:
+
+1. **Dynamic world streaming (chunk load/unload by player position)
+   and occlusion/frustum culling** - streaming: same as above,
+   implemented (`world/streaming.js`). Frustum culling: same as
+   above, on by default with documented exceptions. Occlusion culling
+   specifically (assets hidden behind other geometry, not just
+   outside the view frustum): not implemented, same gap noted above.
+
+2. **LOD groups (high-poly swapped for low-poly at distance)** - not
+   implemented, same gap noted above. This is the biggest actionable
+   gap for this project specifically, since the render-cost problem
+   observed (100-200ms `requestAnimationFrame` handler time, i.e.
+   GPU-bound) is exactly what LOD directly targets - cutting
+   per-frame draw/shader cost - as opposed to memory or load-time,
+   which streaming and pooling already handle.
+
+3. **Object pooling** - implemented, same as above (`props.js`/
+   `buildings.js` pool/free-list model).
+
+4. **Engine-specific tooling (Unreal's World Partition/Nanite, Unity's
+   Addressables/Compute Shaders)** - does not apply. This project is
+   hand-rolled Three.js, not built on Unreal or Unity, so there's no
+   engine-level system to adopt here directly. The nearest Three.js
+   equivalents - `THREE.LOD` (built-in swap-by-distance) and
+   instancing - are either the thing to build toward (LOD, see #2
+   above) or already in use (instancing, for facades and grass).
+
+5. **Scale & pacing (smaller/denser handcrafted area vs. sprawling
+   empty one)** - already the project's actual shape, not a change to
+   make: the hand-authored downtown core is a fixed, dense, bounded
+   area (~200-unit radius), with everything beyond it procedurally
+   generated on demand rather than pre-built at any scale. The
+   relevant open question isn't "shrink the world" (it's already
+   built this way) but whether the hand-authored core itself carries
+   more per-frame draw cost than the procedural chunks around it -
+   worth checking with the profiler before assuming LOD alone fixes
+   the frame-time problem.

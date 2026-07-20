@@ -43,6 +43,51 @@ const PATCH_SIZE = 30;       // world units square, re-centers on the player
 const MAX_BLADE_HEIGHT = 0.62;
 const BLADE_WIDTH = 0.075;
 
+// Quality scaling: this mesh is a single plain THREE.Mesh (not an
+// InstancedMesh - see the header above, position is computed entirely
+// in-shader from a fixed vertex buffer), so there's no `.count` to turn
+// down the way buildings.js's InstancedMeshes can. The equivalent lever
+// for a plain BufferGeometry is geometry.setDrawRange() - it changes how
+// many vertices actually get drawn without touching the underlying
+// buffers, so it's just as cheap to change at runtime as an InstancedMesh
+// count would be.
+//
+// Deliberately reuses settingsResScale (systems/settings.js) rather than
+// adding a new slider/UI - one existing knob the player already has
+// access to, instead of one more setting to design UI for and explain.
+// grass.js does NOT import settings.js to read it directly (that would
+// be a new one-directional import in the wrong place architecturally,
+// and risks becoming circular later if settings.js ever needs anything
+// grass-side back) - settings.js imports setGrassQuality() from here
+// instead and calls it from applyResolution(), so the dependency points
+// the same direction as everywhere else in the settings system: outward
+// from settings.js into the systems it controls, never back.
+//
+// setGrassQuality() can be called before initGrass() has ever run
+// (settings.js applies the saved/default resolution scale once at
+// module load, which happens before main.js's init sequence gets to
+// building the actual scene) - pendingQualityScale covers that case, and
+// initGrass() reads it when the geometry is first built instead of
+// always starting at full density and correcting one frame later.
+let pendingQualityScale = 1;
+
+// Linear (not quadratic like pixel-ratio scaling) since blade count is
+// itself already a 2D-area quantity, not a per-axis one - halving this
+// halves the drawn triangle count directly. Floored at 30% so low-end
+// settings thin the grass noticeably without ever fully balding it out
+// (a bald patch under the player's feet would read as a bug, not as
+// "low settings").
+function effectiveBladeCount(scale){
+  const clamped = Math.max(0.3, Math.min(1, scale));
+  return Math.round(BLADE_COUNT * clamped);
+}
+
+export function setGrassQuality(scale){
+  pendingQualityScale = scale;
+  if(!geo) return; // applied from initGrass() once the mesh exists
+  geo.setDrawRange(0, effectiveBladeCount(scale) * 3); // *3: 3 vertices per blade
+}
+
 /* ---------- procedural textures ---------- */
 
 // Tileable-ish value noise: three independent random channels, each
@@ -315,6 +360,7 @@ void main(){
 
 let mesh = null;
 let material = null;
+let geo = null; // used by setGrassQuality() above to adjust draw range post-init
 
 function buildMaterial(){
   const fogColor = scene.fog ? scene.fog.color : new THREE.Color(0x000000);
@@ -351,7 +397,8 @@ function buildMaterial(){
 
 export function initGrass(){
   if(mesh) return mesh;
-  const geo = buildGeometry();
+  geo = buildGeometry();
+  geo.setDrawRange(0, effectiveBladeCount(pendingQualityScale) * 3); // apply whatever quality was set (or the default) before this ran
   material = buildMaterial();
   mesh = new THREE.Mesh(geo, material);
   mesh.frustumCulled = false; // real position only exists post-shader - see buildGeometry()'s note

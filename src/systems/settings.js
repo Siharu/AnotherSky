@@ -27,6 +27,7 @@ import { state } from '../core/state.js';
 import { getMasterGain } from './audio.js';
 import { deleteSave } from './save.js';
 import { pauseOverlay } from '../ui/menu.js';
+import { setGrassQuality } from '../world/grass.js';
 
 const $ = id => document.getElementById(id);
 
@@ -45,6 +46,10 @@ export let settingsVibration = true;
 export function applyResolution(){
   renderer.setPixelRatio(baseDPR * settingsResScale);
   renderer.setSize(window.innerWidth, window.innerHeight);
+  // Grass isn't pixel work, but it's the single largest fixed per-frame
+  // draw cost with no existing quality lever (see grass.js's own header
+  // comment on why) - reusing this slider instead of adding a new one.
+  setGrassQuality(settingsResScale);
 }
 
 (function loadSettings(){
