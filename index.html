@@ -819,9 +819,53 @@
     width:52px; height:16px; background:rgba(201,194,182,0.14);
     border:1px solid rgba(201,194,182,0.2); box-shadow:0 2px 5px rgba(0,0,0,0.35);
   }
+  .panel-terminal::before{ display:none; }
   .panel-title{
     font-family:var(--font-serif); letter-spacing:.28em; text-transform:uppercase;
     font-size:1rem; color:var(--bone); text-align:center; margin-bottom:22px;
+  }
+  /* ---------- SETTINGS-PANEL TERMINAL DRESSING ----------
+     Settings alone gets the "found terminal" treatment (tape strip,
+     left-aligned title + tag readout, sectioned rows, status footer) -
+     the other panel-box overlays (Memories/Radio Log/Inventory/Help/
+     Credits) keep their plainer centered-title layout untouched, since
+     only Settings was singled out for this pass. */
+  .panel-terminal{ padding-top:40px; }
+  .panel-tape{
+    position:absolute; width:64px; height:18px; top:-9px; left:50%; margin-left:-32px;
+    background:linear-gradient(100deg, rgba(180,164,138,0.4), rgba(180,164,138,0.26));
+    border:1px solid rgba(0,0,0,0.2); box-shadow:0 2px 5px rgba(0,0,0,0.35);
+    opacity:.8; transform:rotate(-2deg);
+  }
+  .panel-term-head{
+    display:flex; justify-content:space-between; align-items:flex-start;
+    margin-bottom:24px; gap:10px;
+  }
+  .panel-title-left{
+    text-align:left; margin-bottom:4px; font-size:1.1rem;
+  }
+  .panel-title-sub{
+    font-family:var(--font-serif); font-style:italic; font-size:11px;
+    color:rgba(201,194,182,0.45); letter-spacing:.02em;
+  }
+  .panel-term-tag{
+    font-family:var(--font-mono); font-size:8.5px; letter-spacing:.08em;
+    text-transform:uppercase; color:rgba(201,194,182,0.32); text-align:right;
+    line-height:1.6; white-space:nowrap; flex-shrink:0; margin-top:4px;
+  }
+  .panel-section{ margin-bottom:6px; }
+  .panel-section-label{
+    font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; text-transform:uppercase;
+    color:var(--rust); border-bottom:1px solid rgba(122,31,31,0.3);
+    padding-bottom:6px; margin-bottom:16px;
+  }
+  .danger-btn-icon{ display:flex; align-items:center; justify-content:center; gap:8px; }
+  .danger-icon{ color:var(--rust); font-size:.85em; line-height:1; }
+  .panel-term-footer{
+    display:flex; justify-content:space-between; gap:12px; margin-top:18px;
+    padding-top:12px; border-top:1px dashed rgba(201,194,182,0.15);
+    font-family:var(--font-serif); font-style:italic; font-size:10.5px;
+    color:rgba(201,194,182,0.38); flex-wrap:wrap;
   }
   .panel-row{ margin-bottom:20px; }
   .panel-row label{
@@ -840,6 +884,7 @@
   .panel-row input[type="range"]{
     -webkit-appearance:none; appearance:none; width:100%; height:7px; border-radius:1px;
     background:
+      repeating-linear-gradient(90deg, transparent 0 7px, rgba(0,0,0,0.5) 7px 8px),
       linear-gradient(180deg, rgba(0,0,0,0.35), transparent 40%),
       linear-gradient(90deg, #6e0f0f 0%, #9c1616 var(--fill,50%), rgba(255,255,255,0.07) var(--fill,50%));
     outline:none; cursor:pointer; border:1px solid rgba(0,0,0,0.4);
@@ -866,6 +911,7 @@
   .panel-row input[type="range"]::-moz-range-track{
     height:7px; border-radius:1px; border:1px solid rgba(0,0,0,0.4);
     background:
+      repeating-linear-gradient(90deg, transparent 0 7px, rgba(0,0,0,0.5) 7px 8px),
       linear-gradient(90deg, #6e0f0f 0%, #9c1616 var(--fill,50%), rgba(255,255,255,0.07) var(--fill,50%));
   }
   .panel-row input[type="range"]:active::-webkit-slider-thumb{ box-shadow:0 2px 5px rgba(0,0,0,0.65), 0 0 0 4px rgba(122,31,31,0.28); }
@@ -1621,91 +1667,157 @@
 </div>
 
   <div id="settings-overlay">
-    <div class="panel-box">
-      <div class="panel-title">Settings</div>
-      <div class="panel-row">
-        <label><span>Camera Sensitivity</span><span id="settings-sens-val" class="live-val">100%</span></label>
-        <div class="slider-wrap">
-          <input type="range" id="settings-sens" min="20" max="220" value="100" />
-          <span class="slider-drip"></span>
+    <div class="panel-box panel-terminal">
+      <div class="panel-tape"></div>
+      <div class="panel-term-head">
+        <div>
+          <div class="panel-title panel-title-left">Settings</div>
+          <div class="panel-title-sub">Adjust your experience.</div>
+        </div>
+        <div class="panel-term-tag">
+          <div>drifter terminal v2.1</div>
+          <div>user: logbook drifter</div>
         </div>
       </div>
-      <div class="panel-row">
-        <label><span>Volume</span><span id="settings-vol-val" class="live-val">55%</span></label>
-        <div class="slider-wrap">
-          <input type="range" id="settings-vol" min="0" max="100" value="55" />
-          <span class="slider-drip"></span>
+
+      <div class="panel-section">
+        <div class="panel-section-label">Visual</div>
+        <div class="panel-row">
+          <label><span>Brightness</span><span id="settings-bright-val" class="live-val">100%</span></label>
+          <div class="slider-wrap">
+            <input type="range" id="settings-bright" min="60" max="140" value="100" />
+            <span class="slider-drip"></span>
+          </div>
+        </div>
+        <div class="panel-row">
+          <label><span>Resolution</span></label>
+          <!-- Custom dropdown: the native <select> below is the actual
+               accessible form control (keyboard/screen-reader fallback,
+               and settings.js's existing change-listener keeps working
+               completely unchanged) but visually hidden - the browser's
+               native OPEN dropdown list can't be styled at all in any
+               browser, which is what was actually breaking the panel's
+               theming (everything else here - sliders, toggles, the torn-
+               paper panel chrome itself - is custom-styled; this was the
+               one native, unthemed control). This div-based trigger +
+               list replaces the visible interaction; res-select.js keeps
+               them in sync in both directions and fires a real 'change'
+               event on the hidden select so nothing downstream needed to
+               change. -->
+          <div class="custom-select" id="res-select">
+            <button type="button" class="custom-select-trigger" id="res-select-trigger"
+                    aria-haspopup="listbox" aria-expanded="false">
+              <span class="custom-select-value">Native</span>
+              <span class="custom-select-arrow">▾</span>
+            </button>
+            <ul class="custom-select-options" id="res-select-options" role="listbox" tabindex="-1">
+              <li role="option" data-value="1" aria-selected="true" class="selected">Native</li>
+              <li role="option" data-value="0.85" aria-selected="false">High</li>
+              <li role="option" data-value="0.65" aria-selected="false">Medium</li>
+              <li role="option" data-value="0.5" aria-selected="false">Low</li>
+            </ul>
+          </div>
+          <select class="panel-select" id="settings-res" hidden aria-hidden="true" tabindex="-1">
+            <option value="1">Native</option>
+            <option value="0.85">High</option>
+            <option value="0.65">Medium</option>
+            <option value="0.5">Low</option>
+          </select>
+        </div>
+        <div class="panel-row">
+          <label><span>Screen Mode</span></label>
+          <!-- Same visual-only-trigger pattern as #res-select above, driving
+               the hidden #settings-screenmode select; screenmode-select.js
+               keeps them in sync and dispatches 'change' so settings.js's
+               listener does the real requestFullscreen()/exitFullscreen()
+               work. Kept as its own tiny module rather than folded into
+               res-select.js since that file is deliberately scoped to just
+               resolution (see its header comment). -->
+          <div class="custom-select" id="screenmode-select">
+            <button type="button" class="custom-select-trigger" id="screenmode-select-trigger"
+                    aria-haspopup="listbox" aria-expanded="false">
+              <span class="custom-select-value">Windowed</span>
+              <span class="custom-select-arrow">▾</span>
+            </button>
+            <ul class="custom-select-options" id="screenmode-select-options" role="listbox" tabindex="-1">
+              <li role="option" data-value="windowed" aria-selected="true" class="selected">Windowed</li>
+              <li role="option" data-value="fullscreen" aria-selected="false">Fullscreen</li>
+            </ul>
+          </div>
+          <select class="panel-select" id="settings-screenmode" hidden aria-hidden="true" tabindex="-1">
+            <option value="windowed">Windowed</option>
+            <option value="fullscreen">Fullscreen</option>
+          </select>
         </div>
       </div>
-      <div class="panel-row">
-        <label><span>Brightness</span><span id="settings-bright-val" class="live-val">100%</span></label>
-        <div class="slider-wrap">
-          <input type="range" id="settings-bright" min="60" max="140" value="100" />
-          <span class="slider-drip"></span>
+
+      <div class="panel-section">
+        <div class="panel-section-label">Audio</div>
+        <div class="panel-row">
+          <label><span>Master Volume</span><span id="settings-vol-val" class="live-val">55%</span></label>
+          <div class="slider-wrap">
+            <input type="range" id="settings-vol" min="0" max="100" value="55" />
+            <span class="slider-drip"></span>
+          </div>
+        </div>
+        <div class="panel-row">
+          <label><span>Music Volume</span><span id="settings-music-val" class="live-val">40%</span></label>
+          <div class="slider-wrap">
+            <input type="range" id="settings-music" min="0" max="100" value="40" />
+            <span class="slider-drip"></span>
+          </div>
+        </div>
+        <div class="panel-row">
+          <label><span>SFX Volume</span><span id="settings-sfx-val" class="live-val">70%</span></label>
+          <div class="slider-wrap">
+            <input type="range" id="settings-sfx" min="0" max="100" value="70" />
+            <span class="slider-drip"></span>
+          </div>
+        </div>
+        <div class="toggle-row">
+          <label>Mute All Audio</label>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-mute" />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </span>
         </div>
       </div>
-      <div class="panel-row">
-        <label><span>Resolution</span></label>
-        <!-- Custom dropdown: the native <select> below is the actual
-             accessible form control (keyboard/screen-reader fallback,
-             and settings.js's existing change-listener keeps working
-             completely unchanged) but visually hidden - the browser's
-             native OPEN dropdown list can't be styled at all in any
-             browser, which is what was actually breaking the panel's
-             theming (everything else here - sliders, toggles, the torn-
-             paper panel chrome itself - is custom-styled; this was the
-             one native, unthemed control). This div-based trigger +
-             list replaces the visible interaction; res-select.js keeps
-             them in sync in both directions and fires a real 'change'
-             event on the hidden select so nothing downstream needed to
-             change. -->
-        <div class="custom-select" id="res-select">
-          <button type="button" class="custom-select-trigger" id="res-select-trigger"
-                  aria-haspopup="listbox" aria-expanded="false">
-            <span class="custom-select-value">Native</span>
-            <span class="custom-select-arrow">▾</span>
-          </button>
-          <ul class="custom-select-options" id="res-select-options" role="listbox" tabindex="-1">
-            <li role="option" data-value="1" aria-selected="true" class="selected">Native</li>
-            <li role="option" data-value="0.85" aria-selected="false">High</li>
-            <li role="option" data-value="0.65" aria-selected="false">Medium</li>
-            <li role="option" data-value="0.5" aria-selected="false">Low</li>
-          </ul>
+
+      <div class="panel-section">
+        <div class="panel-section-label">Gameplay</div>
+        <div class="panel-row">
+          <label><span>Camera Sensitivity</span><span id="settings-sens-val" class="live-val">100%</span></label>
+          <div class="slider-wrap">
+            <input type="range" id="settings-sens" min="20" max="220" value="100" />
+            <span class="slider-drip"></span>
+          </div>
         </div>
-        <select class="panel-select" id="settings-res" hidden aria-hidden="true" tabindex="-1">
-          <option value="1">Native</option>
-          <option value="0.85">High</option>
-          <option value="0.65">Medium</option>
-          <option value="0.5">Low</option>
-        </select>
+        <div class="toggle-row">
+          <label>Invert Look (Y-Axis)</label>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-invert-y" />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </span>
+        </div>
+        <div class="toggle-row">
+          <label>Vibration (Touch)</label>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-vibration" checked />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </span>
+        </div>
       </div>
-      <div class="toggle-row">
-        <label>Mute All Audio</label>
-        <span class="toggle-switch">
-          <input type="checkbox" id="settings-mute" />
-          <span class="toggle-track"></span>
-          <span class="toggle-thumb"></span>
-        </span>
-      </div>
-      <div class="toggle-row">
-        <label>Invert Look (Y-Axis)</label>
-        <span class="toggle-switch">
-          <input type="checkbox" id="settings-invert-y" />
-          <span class="toggle-track"></span>
-          <span class="toggle-thumb"></span>
-        </span>
-      </div>
-      <div class="toggle-row">
-        <label>Vibration (Touch)</label>
-        <span class="toggle-switch">
-          <input type="checkbox" id="settings-vibration" checked />
-          <span class="toggle-track"></span>
-          <span class="toggle-thumb"></span>
-        </span>
-      </div>
-      <button class="panel-select" id="settings-fullscreen" style="cursor:pointer;text-align:center;margin-bottom:20px;">Enter Fullscreen</button>
-      <button class="danger-btn" id="settings-delete-save">Delete Memories (erase save)</button>
+
+      <button class="danger-btn danger-btn-icon" id="settings-delete-save"><span class="danger-icon">⚠</span>Delete Memories (erase save)</button>
       <button class="panel-close" id="settings-close">Close</button>
+
+      <div class="panel-term-footer">
+        <span>signal strength: weak.</span>
+        <span>the storm hasn't stopped.</span>
+      </div>
     </div>
   </div>
   <div id="credits-overlay">

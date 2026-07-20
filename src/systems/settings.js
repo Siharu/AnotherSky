@@ -42,6 +42,15 @@ export let settingsBrightness = 1;
 export let settingsResScale = 1;
 export let settingsInvertY = false;
 export let settingsVibration = true;
+// Music/SFX volume: the current WebAudio graph (see systems/audio.js) is
+// still a single bus - every source connects straight to masterGain, with
+// no separate music/sfx sub-gain to split off. These two sliders are real,
+// persisted settings (and will drive their own buses once that graph gets
+// split), but for now they're UI-only and don't independently attenuate
+// anything - Master Volume remains the one slider that actually reaches
+// the audio graph. Flagging this here rather than quietly faking it.
+export let settingsMusicVolume = 0.4;
+export let settingsSfxVolume = 0.7;
 
 export function applyResolution(){
   renderer.setPixelRatio(baseDPR * settingsResScale);
@@ -59,6 +68,8 @@ export function applyResolution(){
       const s = JSON.parse(raw);
       if(typeof s.sens === 'number') settingsSensMult = s.sens;
       if(typeof s.vol === 'number') userVolume = s.vol;
+      if(typeof s.music === 'number') settingsMusicVolume = s.music;
+      if(typeof s.sfx === 'number') settingsSfxVolume = s.sfx;
       if(typeof s.bright === 'number') settingsBrightness = s.bright;
       if(typeof s.res === 'number') settingsResScale = s.res;
       if(typeof s.invertY === 'boolean') settingsInvertY = s.invertY;
@@ -71,7 +82,8 @@ export function applyResolution(){
 
 export function saveSettings(){
   try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify({
-    sens:settingsSensMult, vol:userVolume, bright:settingsBrightness, res:settingsResScale,
+    sens:settingsSensMult, vol:userVolume, music:settingsMusicVolume, sfx:settingsSfxVolume,
+    bright:settingsBrightness, res:settingsResScale,
     invertY:settingsInvertY, vibration:settingsVibration, muted:state.muted
   })); }catch(e){}
 }
@@ -107,15 +119,25 @@ function updateSliderVisual(input){
 
 const settingsBright = $('settings-bright');
 const settingsBrightVal = $('settings-bright-val');
+const settingsMusic = $('settings-music');
+const settingsMusicVal = $('settings-music-val');
+const settingsSfx = $('settings-sfx');
+const settingsSfxVal = $('settings-sfx-val');
 settingsSens.value = Math.round(settingsSensMult*100);
 settingsSensVal.textContent = Math.round(settingsSensMult*100) + '%';
 settingsVol.value = Math.round(userVolume*100);
 settingsVolVal.textContent = Math.round(userVolume*100) + '%';
 settingsBright.value = Math.round(settingsBrightness*100);
 settingsBrightVal.textContent = Math.round(settingsBrightness*100) + '%';
+settingsMusic.value = Math.round(settingsMusicVolume*100);
+settingsMusicVal.textContent = Math.round(settingsMusicVolume*100) + '%';
+settingsSfx.value = Math.round(settingsSfxVolume*100);
+settingsSfxVal.textContent = Math.round(settingsSfxVolume*100) + '%';
 updateSliderVisual(settingsSens);
 updateSliderVisual(settingsVol);
 updateSliderVisual(settingsBright);
+updateSliderVisual(settingsMusic);
+updateSliderVisual(settingsSfx);
 applyBrightness();
 
 const settingsRes = $('settings-res');
@@ -143,6 +165,18 @@ settingsBright.addEventListener('input', ()=>{
   settingsBrightVal.textContent = settingsBright.value + '%';
   updateSliderVisual(settingsBright);
   applyBrightness();
+  saveSettings();
+});
+settingsMusic.addEventListener('input', ()=>{
+  settingsMusicVolume = settingsMusic.value/100;
+  settingsMusicVal.textContent = settingsMusic.value + '%';
+  updateSliderVisual(settingsMusic);
+  saveSettings();
+});
+settingsSfx.addEventListener('input', ()=>{
+  settingsSfxVolume = settingsSfx.value/100;
+  settingsSfxVal.textContent = settingsSfx.value + '%';
+  updateSliderVisual(settingsSfx);
   saveSettings();
 });
 
@@ -174,21 +208,35 @@ settingsVibrationEl.addEventListener('change', ()=>{
   saveSettings();
 });
 
-// ---------- FULLSCREEN ----------
-// Deliberately not persisted - the Fullscreen API requires a fresh user
-// gesture every time (can't auto-re-enter on page load even if it was on
-// last session), so there's nothing meaningful to restore from a saved
-// setting. Button label just tracks live browser state instead.
-const settingsFullscreen = $('settings-fullscreen');
-function updateFullscreenLabel(){
-  settingsFullscreen.textContent = document.fullscreenElement ? 'Exit Fullscreen' : 'Enter Fullscreen';
+// ---------- SCREEN MODE ----------
+// Replaces the old standalone "Enter Fullscreen" button with a Windowed/
+// Fullscreen dropdown (screenmode-select.js drives the themed trigger,
+// same visual-only-layer pattern as #res-select). Deliberately not
+// persisted - the Fullscreen API requires a fresh user gesture every
+// time (can't auto-re-enter on page load even if it was on last
+// session), so there's nothing meaningful to restore from a saved
+// setting. The select's value just tracks live browser state instead,
+// including when fullscreen is exited some other way (Esc key, browser
+// chrome) - fullscreenchange keeps it honest either direction.
+const settingsScreenmode = $('settings-screenmode');
+function syncScreenmodeFromBrowser(){
+  const val = document.fullscreenElement ? 'fullscreen' : 'windowed';
+  if(settingsScreenmode.value !== val){
+    settingsScreenmode.value = val;
+    settingsScreenmode.dispatchEvent(new Event('change', { bubbles:true }));
+  }
 }
-settingsFullscreen.addEventListener('click', ()=>{
-  if(document.fullscreenElement) document.exitFullscreen();
-  else document.documentElement.requestFullscreen().catch(()=>{}); // some browsers/contexts (e.g. iframes without allow="fullscreen") reject this - failing silently just leaves the button as "Enter Fullscreen", not a broken state
+settingsScreenmode.addEventListener('change', ()=>{
+  const wantFullscreen = settingsScreenmode.value === 'fullscreen';
+  const isFullscreen = !!document.fullscreenElement;
+  if(wantFullscreen && !isFullscreen){
+    document.documentElement.requestFullscreen().catch(()=>{}); // some browsers/contexts (e.g. iframes without allow="fullscreen") reject this - fullscreenchange below just leaves the select on "Windowed" again, not a broken state
+  } else if(!wantFullscreen && isFullscreen){
+    document.exitFullscreen();
+  }
 });
-document.addEventListener('fullscreenchange', updateFullscreenLabel);
-updateFullscreenLabel();
+document.addEventListener('fullscreenchange', syncScreenmodeFromBrowser);
+syncScreenmodeFromBrowser();
 
 // Settings can be opened from the title menu OR from inside the in-game
 // menu hub. Opening it from the hub used to just layer settings on top

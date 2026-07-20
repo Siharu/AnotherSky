@@ -60,6 +60,7 @@ import {
 // hidden native <select> above). Must import after settings.js so the
 // hidden select already reflects the persisted value when this runs.
 import './ui/res-select.js';
+import './ui/screenmode-select.js';
 import {
   hubOverlay, isGameplayActive,
   openHub, closeHub, showHubFlavor
