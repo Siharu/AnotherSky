@@ -1335,33 +1335,33 @@
        here. */
   }
   /* ---------- OBJECTIVE PANEL ----------
-     Left column, below #top-bar (the right column at this same 14px
-     inset is already claimed by #weather-label/#minimap). Populated
-     dynamically by ui/hud.js's updateObjectivePanel() from
-     systems/quests.js's getActiveQuests() - empty/hidden until the
-     player has picked up the radio, same gating getActiveQuests()
-     itself already does. Mockup's bold-current/dim-secondary read:
-     the first not-yet-complete objective gets .current (bright,
-     bold), everything else is dim - completed ones additionally get a
-     strikethrough so progress reads as progress, not just as another
-     dim line. */
+     Left column, sitting below the real #top-bar (radio/hub icons +
+     clock already occupy this same top-left corner - stacking below
+     rather than adding a second decorative icon row avoids duplicating
+     controls that already exist). Populated by ui/hud.js's
+     updateObjectivePanel() from systems/quests.js's getActiveQuests() -
+     empty/hidden until the player has picked up the radio, same gating
+     getActiveQuests() itself already does. Unlike the previous version,
+     completed objectives are dropped entirely rather than kept
+     on-screen struck through - only the current objective plus the
+     next one show, not a running history. */
   #objective-panel{
-    position:absolute; top:calc(56px + var(--safe-t)); left:calc(14px + var(--safe-l));
-    max-width:250px; font-family:var(--font-mono); pointer-events:none;
+    position:absolute; top:calc(58px + var(--safe-t)); left:calc(14px + var(--safe-l));
+    max-width:260px; font-family:var(--font-mono); pointer-events:none;
     opacity:0; transition:opacity .6s ease;
   }
   #objective-panel.visible{ opacity:1; }
-  .obj-row{
-    display:flex; justify-content:space-between; gap:10px;
-    font-size:.6rem; letter-spacing:.06em; line-height:1.5;
-    color:var(--bone); opacity:.45; white-space:nowrap;
+  .obj-section-label{
+    font-size:.6rem; letter-spacing:.22em; color:var(--bone); opacity:.5;
+    padding-bottom:4px; margin-bottom:6px; border-bottom:1px solid rgba(201,194,182,0.18);
   }
-  .obj-row .obj-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .obj-row .obj-status{ opacity:.7; flex-shrink:0; }
-  .obj-row.current{ opacity:1; font-weight:600; color:var(--rust); }
-  .obj-row.current .obj-status{ opacity:1; }
-  .obj-row.complete .obj-name{ text-decoration:line-through; }
-  .obj-row.complete{ opacity:.32; }
+  .obj-row{
+    font-size:.66rem; letter-spacing:.03em; line-height:1.6; color:var(--bone);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .obj-row.current{ opacity:1; color:var(--rust); }
+  .obj-row.current::before{ content:'- '; }
+  .obj-row.next{ opacity:.4; padding-left:1.1em; }
 
   #frag-counter{
     font-size:.68rem; letter-spacing:.22em; opacity:.7; background:rgba(0,0,0,0.4);
@@ -1698,12 +1698,12 @@
      the character's own thoughts arriving broken and mismatched. */
   #wake-dialogue{
     position:fixed; left:50%; bottom:16vh; transform:translateX(-50%);
-    max-width:88vw; min-width:200px; z-index:60;
-    padding:14px 22px; background:rgba(6,5,8,0.68);
-    border:1px solid rgba(201,194,182,0.22);
+    width:min(640px, 82vw); z-index:60;
+    padding:14px 22px; background:rgba(6,5,8,0.72);
+    border:1px solid rgba(122,31,31,0.4);
     clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
     opacity:0; pointer-events:none; transition:opacity .35s ease;
-    text-align:center;
+    text-align:left;
   }
   #wake-dialogue.visible{ opacity:1; }
   #wake-dialogue.glitch-burst{ filter:url(#chromaGlitch); animation:dialogueShake .22s linear; }
@@ -1731,10 +1731,18 @@
     92%{ opacity:.9; transform:translate(1px,0); }
     100%{ opacity:.85; transform:translate(0,0); }
   }
+  /* the other two corners - ::before/::after on #wake-dialogue are
+     already spoken for by the top-left/bottom-right scratch accents
+     above, so these are explicit spans instead. Same language, no
+     animation (keeping two corners static-heavier/two lighter matches
+     the reference's asymmetric wear rather than all 4 flickering). */
+  .wd-corner{ position:absolute; width:10px; height:10px; pointer-events:none; opacity:.55; }
+  .wd-corner-tr{ top:-1px; right:-1px; border-top:1px solid rgba(122,31,31,0.6); border-right:1px solid rgba(122,31,31,0.6); }
+  .wd-corner-bl{ bottom:-1px; left:-1px; border-bottom:1px solid rgba(122,31,31,0.6); border-left:1px solid rgba(122,31,31,0.6); }
   /* [ CH 0.3 ] channel tag, top-right corner of the box - flavor text
      only, not tied to any real channel/signal state. */
   #wake-dialogue-channel{
-    position:absolute; top:-9px; right:10px; z-index:1;
+    position:absolute; top:-9px; right:16px; z-index:1;
     font-family:var(--font-mono); font-size:.58rem; letter-spacing:.1em;
     color:rgba(122,31,31,0.85); background:#0c0708;
     padding:1px 6px; border:1px solid rgba(122,31,31,0.5);
@@ -1749,7 +1757,7 @@
      Smaller text + a hard max-height + its own scrollbar (matching the
      settings panel's themed one) keeps a long entry from ever growing
      past a small band near the bottom, however long the lore text is. */
-  #wake-dialogue.compact{ bottom:9vh; max-width:78vw; padding:10px 16px; }
+  #wake-dialogue.compact{ bottom:9vh; width:min(560px, 78vw); padding:10px 16px; }
   #wake-dialogue.compact #wake-dialogue-text{
     font-size:clamp(.78rem,3vw,.92rem); line-height:1.45;
     max-height:22vh; overflow-y:auto;
@@ -2244,7 +2252,7 @@
   <p>turn your device to see the sky</p>
 </div>
 
-<div id="wake-dialogue"><span id="wake-dialogue-channel">[ CH 0.3 ]</span><div id="wake-dialogue-text"></div></div>
+<div id="wake-dialogue"><span id="wake-dialogue-channel">[ CH 0.3 ]</span><span class="wd-corner wd-corner-tr"></span><span class="wd-corner wd-corner-bl"></span><div id="wake-dialogue-text"></div></div>
 
 <div id="hud">
   <div id="top-bar">

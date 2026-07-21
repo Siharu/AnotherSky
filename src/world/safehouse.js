@@ -345,7 +345,19 @@ function buildSafehouse(){
     brace.rotation.z = rot;
     lockedDoorPivot.add(brace);
   }
+  // Lintel closing the gap between the door leaf (lockedDoorH, shorter
+  // than the wall) and the wall opening itself, which addWallGapX() cuts
+  // at the FULL wall height (SAFEHOUSE_WALL_H) - without this, that
+  // 0.3-unit strip at the top of the doorway had nothing covering it, a
+  // real hole straight through to the sealed void behind, visible as a
+  // gap above the door regardless of the glitch jitter. Same fix pattern
+  // the main entrance door already uses (see `lintel` above) - this one
+  // just never got one.
+  const lockedLintel = new THREE.Mesh(new THREE.BoxGeometry(lockedDoorW+0.14, SAFEHOUSE_WALL_H-lockedDoorH+0.06, 0.1), braceMat);
+  lockedLintel.position.set(LOCKED_DOOR_X, SAFEHOUSE_WALL_H - (SAFEHOUSE_WALL_H-lockedDoorH)/2 + 0.02, DIV_Z);
+  group.add(lockedLintel);
   obstacles.push({ x: cx+LOCKED_DOOR_X, z: cz+DIV_Z, type:'rect', hw: lockedDoorW/2, hd: 0.1, radius: lockedDoorW/2 });
+
 
   // windows - west wall (locked room, cosmetic only - nothing to see
   // beyond it since that room is a sealed void) and east wall (radio room)

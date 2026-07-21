@@ -89,15 +89,19 @@ export const radioTicker = document.getElementById('radio-ticker');
    return [] until the radio's been picked up, so this panel just stays
    empty/hidden until then, same as the source data. Update cadence:
    called every frame from animate() like updateWeatherLabel(), but
-   builds a cheap signature string (id:have:label per quest) and skips
-   all DOM work when nothing's actually changed - objective state only
-   moves on real game events (pickup, door unlock, etc), not per-frame,
-   so re-writing innerHTML 60x/sec would be pure waste. "Current"
-   objective (bold/bright, matching the mockup) is the first not-yet-
-   complete one; once all are complete the last one stays marked
-   current rather than the panel going dark. Completed ones get a
-   strikethrough on top of the dim styling so progress reads as
-   progress, not just as another faded line. */
+   builds a cheap signature string (id:have per quest) and skips all DOM
+   work when nothing's actually changed - objective state only moves on
+   real game events (pickup, door unlock, etc), not per-frame, so
+   re-writing innerHTML 60x/sec would be pure waste. Matches the
+   reference mockup's structure: an "OBJECTIVE" section label, the
+   current (first not-yet-complete) objective as a dash-prefixed
+   rust-red line, and just the next upcoming one dimmed underneath -
+   completed objectives and the per-item status word ("Found"/
+   "Searching", still available via q.label for anything else that
+   wants it) are dropped rather than kept as a growing on-screen
+   history, to match the reference's plain current/next read. Once
+   every objective is complete, the last one stays shown as current
+   rather than the panel going dark. */
 const objectivePanelEl = document.getElementById('objective-panel');
 let lastObjectiveSig = null;
 export function updateObjectivePanel(){
@@ -111,15 +115,18 @@ export function updateObjectivePanel(){
     }
     return;
   }
-  const sig = quests.map(q => `${q.id}:${q.have}:${q.label}`).join('|');
+  const sig = quests.map(q => `${q.id}:${q.have}`).join('|');
   if(sig === lastObjectiveSig) return;
   lastObjectiveSig = sig;
   const currentIdx = quests.findIndex(q => !q.have);
   const activeIdx = currentIdx===-1 ? quests.length-1 : currentIdx;
-  objectivePanelEl.innerHTML = quests.map((q,i) => {
-    const cls = i===activeIdx ? 'obj-row current' : (q.have ? 'obj-row complete' : 'obj-row');
-    return `<div class="${cls}"><span class="obj-name">${q.name}</span><span class="obj-status">${q.label}</span></div>`;
-  }).join('');
+  const current = quests[activeIdx];
+  const next = quests[activeIdx+1];
+  objectivePanelEl.innerHTML = `
+    <div class="obj-section-label">OBJECTIVE</div>
+    <div class="obj-row current">${current.name}</div>
+    ${next ? `<div class="obj-row next">${next.name}</div>` : ''}
+  `;
   objectivePanelEl.classList.add('visible');
 }
 
