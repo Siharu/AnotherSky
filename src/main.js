@@ -2844,16 +2844,50 @@ function animate(){
 
 /* ---------- COMPASS (Stage 10: lies at low sanity) ---------- */
 const compassDirs = ['N','NE','E','SE','S','SW','W','NW'];
+const compassTrack = $('compass-track');
+const COMPASS_TICK_PX = 56; // must match #compass-track .tick { width } in index.html
+// Ruler track: 16 slots per revolution (8 named directions + 8 minor
+// "·" ticks between them, matching the mockup's tick spacing), repeated
+// 3x so the masked viewport always has ticks to show regardless of
+// which slot is centered - middle repeat is the one the pointer reads
+// from, the flanking repeats are just so the ruler never runs dry at
+// the mask edges.
+if(compassTrack){
+  let html = '';
+  for(let rep=0; rep<3; rep++){
+    for(let slot=0; slot<16; slot++){
+      const isMinor = slot % 2 === 1;
+      const label = isMinor ? '·' : compassDirs[slot/2];
+      html += `<span class="tick${isMinor?' minor':''}">${label}</span>`;
+    }
+  }
+  compassTrack.innerHTML = html;
+}
 export function updateCompass(){
+  if(!compassTrack) return;
+  let slotPos; // continuous position in slot units (0-16 per revolution)
   if(state.sanity>0.28 || Math.random()>0.4){
-    const idx = Math.round(((-state.yaw)/(Math.PI*2))*8 + 8) % 8;
-    compassStrip.textContent = compassDirs[(idx+8)%8];
+    // real heading - same formula as before, now kept continuous (not
+    // rounded to a single 45-degree step) so the ruler can slide smoothly
+    // instead of snapping between 8 fixed labels
+    const cont = (((-state.yaw)/(Math.PI*2))*8 + 8) % 8;
+    slotPos = cont * 2;
     compassStrip.classList.remove('lying');
   } else {
+    // Stage 10 lie: deliberately jumps to a random direction, discrete
+    // and jittery (no easing) rather than sliding there - same
+    // dishonest, unsettling feel the old single-letter version had
     const idx2 = Math.floor(Math.random()*8);
-    compassStrip.textContent = compassDirs[idx2];
+    slotPos = idx2 * 2;
     compassStrip.classList.add('lying');
   }
+  // center on the middle repeat (slots 16-31) so there's always a full
+  // repeat of ticks visible on either side of the pointer. #compass-track
+  // has left:50% in CSS (its own local x=0 already sits at the viewport
+  // center), so this only needs to shift left by each slot's center
+  // offset - no extra -50% needed on top of that.
+  const offsetPx = (16 + slotPos) * COMPASS_TICK_PX + COMPASS_TICK_PX/2;
+  compassTrack.style.transform = `translateX(-${offsetPx}px)`;
 }
 
 // updateMinimap() now lives in ui/hud.js — imported above. Called with

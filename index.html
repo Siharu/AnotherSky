@@ -1525,12 +1525,37 @@
   .icon-btn.depleted{ opacity:.3; }
   .icon-btn.locked{ opacity:.22; filter:grayscale(1); cursor:default; }
 
+  /* Ruler-style compass: a fixed viewport masks a wide horizontal track
+     of tick marks/labels that main.js's updateCompass() slides via
+     transform. The center-fixed pointer (::after triangle, via
+     #compass-pointer below) never moves - the track scrolls under it,
+     same visual language as the HUD mockup. Kept centered top, same
+     footprint area as the old single-letter label so it doesn't creep
+     into the minimap's top-right corner. */
   #compass-strip{
     position:absolute; top:calc(52px + var(--safe-t)); left:50%; transform:translateX(-50%);
-    font-size:.64rem; letter-spacing:.34em; color:var(--bone); opacity:.5; font-weight:700;
-    background:rgba(0,0,0,0.35); padding:4px 14px; pointer-events:none; border-bottom:1px solid rgba(201,194,182,0.15);
+    width:min(320px, 60vw); height:22px; overflow:hidden;
+    background:rgba(0,0,0,0.35); pointer-events:none; border-bottom:1px solid rgba(201,194,182,0.15);
+    -webkit-mask-image:linear-gradient(to right, transparent 0%, #000 15%, #000 85%, transparent 100%);
+    mask-image:linear-gradient(to right, transparent 0%, #000 15%, #000 85%, transparent 100%);
   }
-  #compass-strip.lying{ color:var(--rust); opacity:.7; }
+  #compass-track{
+    position:absolute; top:0; left:50%; height:100%; display:flex; align-items:center;
+    font-family:var(--font-mono); font-size:.6rem; letter-spacing:.1em; color:var(--bone); opacity:.55;
+    font-weight:700; white-space:nowrap; will-change:transform;
+  }
+  #compass-track .tick{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:56px; flex:none;
+  }
+  #compass-track .tick.minor{ opacity:.4; font-size:.85em; font-weight:400; }
+  #compass-pointer{
+    position:absolute; top:-1px; left:50%; transform:translateX(-50%);
+    font-size:.6rem; color:var(--rust); line-height:1; z-index:1;
+  }
+  #compass-strip.lying #compass-track{ color:var(--rust); opacity:.7; }
+  #compass-strip.lying #compass-pointer{ animation:compassLieJitter .4s steps(2) infinite; }
+  @keyframes compassLieJitter{ 0%,100%{ transform:translateX(-50%) translateY(0); } 50%{ transform:translateX(-50%) translateY(1px); } }
 
   /* ---------- MINIMAP ----------
      Hidden until the radio tower is reached. Small radar-style circle,
@@ -1620,6 +1645,38 @@
   }
   #wake-dialogue.visible{ opacity:1; }
   #wake-dialogue.glitch-burst{ filter:url(#chromaGlitch); animation:dialogueShake .22s linear; }
+  /* Scratched/glitch corner brackets - same corner-accent language
+     #title-frame already uses, but rust-red and slightly jittered so the
+     box itself reads as damaged rather than clean UI chrome. Two corners
+     per side (top-left/bottom-right heavier) keeps it asymmetric instead
+     of a uniform frame. */
+  #wake-dialogue::before, #wake-dialogue::after{
+    content:''; position:absolute; width:16px; height:16px; pointer-events:none;
+  }
+  #wake-dialogue::before{
+    top:-1px; left:-1px;
+    border-top:1px solid rgba(122,31,31,0.75); border-left:1px solid rgba(122,31,31,0.75);
+    animation:dialogueScratch 2.6s steps(1) infinite;
+  }
+  #wake-dialogue::after{
+    bottom:-1px; right:-1px;
+    border-bottom:1px solid rgba(122,31,31,0.75); border-right:1px solid rgba(122,31,31,0.75);
+    animation:dialogueScratch 2.6s steps(1) infinite reverse;
+  }
+  @keyframes dialogueScratch{
+    0%,88%{ opacity:.85; transform:translate(0,0); }
+    90%{ opacity:.3; transform:translate(-1px,1px); }
+    92%{ opacity:.9; transform:translate(1px,0); }
+    100%{ opacity:.85; transform:translate(0,0); }
+  }
+  /* [ CH 0.3 ] channel tag, top-right corner of the box - flavor text
+     only, not tied to any real channel/signal state. */
+  #wake-dialogue-channel{
+    position:absolute; top:-9px; right:10px; z-index:1;
+    font-family:var(--font-mono); font-size:.58rem; letter-spacing:.1em;
+    color:rgba(122,31,31,0.85); background:#0c0708;
+    padding:1px 6px; border:1px solid rgba(122,31,31,0.5);
+  }
   /* Lore-pickup text reuses this box (see main.js showLineBox()/orb
      collection) but a full lore entry ("Title — body sentence") runs
      much longer than the one-line wake-up thoughts this box was sized
@@ -2125,7 +2182,7 @@
   <p>turn your device to see the sky</p>
 </div>
 
-<div id="wake-dialogue"><div id="wake-dialogue-text"></div></div>
+<div id="wake-dialogue"><span id="wake-dialogue-channel">[ CH 0.3 ]</span><div id="wake-dialogue-text"></div></div>
 
 <div id="hud">
   <div id="top-bar">
@@ -2149,15 +2206,9 @@
       <div class="icon-btn" id="hub-btn" title="menu">☰</div>
     </div>
   </div>
-  <div id="compass-strip">N</div>
+  <div id="compass-strip"><div id="compass-track"></div><div id="compass-pointer">▼</div></div>
   <div id="minimap"><canvas id="minimap-canvas" width="104" height="104"></canvas></div>
 
-  <div id="bigmap-overlay">
-    <div id="bigmap-close">✕</div>
-    <div id="bigmap-title">Another Sky — Charted Ground</div>
-    <canvas id="bigmap-canvas" width="640" height="640"></canvas>
-    <div id="bigmap-sub">only the ground you've actually walked is charted.</div>
-  </div>
   <div id="crosshair"></div>
   <div id="whisper"></div>
   <div id="radio-ticker"></div>
@@ -2167,6 +2218,19 @@
   </div>
   <div id="look-zone"></div>
   <div id="interact-btn">◎</div>
+</div>
+
+<!-- Moved out of #hud (was the only overlay nested there instead of being
+     a top-level sibling like #settings-overlay/#credits-overlay/
+     #ending-screen) - see docs/HANDOFF.md minimap-click fix notes. Nesting
+     it inside #hud capped its z-index:80 to only ever stack against other
+     #hud children, and tied its visibility to #hud's own opacity/pointer-
+     events state instead of standing on its own like every other overlay. -->
+<div id="bigmap-overlay">
+  <div id="bigmap-close">✕</div>
+  <div id="bigmap-title">Another Sky — Charted Ground</div>
+  <canvas id="bigmap-canvas" width="640" height="640"></canvas>
+  <div id="bigmap-sub">only the ground you've actually walked is charted.</div>
 </div>
 
 <div id="vignette"></div>

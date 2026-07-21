@@ -683,4 +683,18 @@ function updateDust(dt){
   dustGeo.attributes.position.needsUpdate = true;
 }
 
+// HUD weather label support: counts how many squall cells are currently
+// drifting near the player (rainCellX/Z are already player-relative - see
+// updateRain above) rather than reading any authored "weather state",
+// since none exists in this file. Fuzzy by nature (a read of what's
+// actually rendering, not a designed intensity level) - see
+// docs/HANDOFF.md's weather-label entry for the tradeoff.
+export function getNearbySquallCount(radius=14){
+  let n = 0;
+  for(let c=0;c<RAIN_CELL_COUNT;c++){
+    if(Math.hypot(rainCellX[c], rainCellZ[c]) < radius) n++;
+  }
+  return n;
+}
+
 export { cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat, rain, farRain, dust, updateRain, updateDust };
