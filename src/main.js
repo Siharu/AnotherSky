@@ -65,7 +65,7 @@ import {
   hubOverlay, isGameplayActive,
   openHub, closeHub, showHubFlavor
 } from './ui/menu.js';
-import { setTitleScreenActive, tickMenuIdle, registerMainRefs } from './ui/titleScreen.js';
+import { setTitleScreenActive, tickMenuIdle, registerMainRefs, updateTitleScene } from './ui/titleScreen.js';
 import { updateDread } from './systems/dread.js';
 import { updatePlayer, registerPlayerRefs } from './entities/player.js';
 import { pickFrom } from './utils/math.js';
@@ -1308,9 +1308,10 @@ let radioTowerBeaconMesh, radioTowerHeight, radioTowerBeaconLight, radioTowerPul
   // this cheap to just loop). Flat on the horizontal plane so they read
   // as an expanding "ping" from the tower regardless of which way the
   // idle camera happens to be facing, rather than a billboard that only
-  // works face-on. Only actually driven by updateTitlePulseRings() during
-  // the idle title screen (see animate()) - otherwise sit at opacity 0,
-  // which costs nothing.
+  // works face-on. Only actually driven during the idle title screen, by
+  // updateTitleScene() in ui/titleScreen.js (reads this pool via
+  // getRadioTowerPulseRings() passed through registerMainRefs below) -
+  // otherwise sit at opacity 0, which costs nothing.
   const ringGeo = new THREE.RingGeometry(0.94, 1, 40);
   const pulseRingMat0 = new THREE.MeshBasicMaterial({ color:0xff3b3b, transparent:true, opacity:0, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false });
   radioTowerPulseRings = [];
@@ -1338,34 +1339,6 @@ function updateRadioTowerBeacon(){
   // phase as the mesh/glow so they read as one light source, not two
   // fighting rhythms.
   if(radioTowerBeaconLight) radioTowerBeaconLight.intensity = 1.7 + pulse*2.1;
-}
-// Idle-title-screen only (see animate()'s `else` branch, gated on
-// state.titleScreenActive same as updateTitleCam) - expands each ring
-// pooled above from a point at the beacon out to a faint faded halo, one
-// ring firing every ~2.6s, staggered so there's always one mid-expansion.
-// Explicitly zeroes everything out and returns once titleScreenActive
-// goes false, rather than just not being called anymore, so a ring that
-// was mid-fade when the player hit "Remember" doesn't hang there frozen
-// at whatever opacity/scale it last had.
-let titlePulseClock = 0;
-const PULSE_PERIOD = 2.6, PULSE_MAX_R = 22, PULSE_RING_COUNT = 3;
-function updateTitlePulseRings(dt, active){
-  if(!radioTowerPulseRings) return;
-  if(!active){
-    if(titlePulseClock !== 0){
-      titlePulseClock = 0;
-      radioTowerPulseRings.forEach(r=>{ r.visible = false; r.material.opacity = 0; });
-    }
-    return;
-  }
-  titlePulseClock += dt;
-  radioTowerPulseRings.forEach((ring, i)=>{
-    const phase = ((titlePulseClock/PULSE_PERIOD) + i/PULSE_RING_COUNT) % 1;
-    const r = 0.6 + phase*PULSE_MAX_R;
-    ring.visible = true;
-    ring.scale.setScalar(r);
-    ring.material.opacity = (1-phase) * 0.4;
-  });
 }
 export function updateRadioTower(dt){
   updateRadioTowerBeacon();
@@ -1692,7 +1665,12 @@ registerMainRefs({
   RADIO_PICKUP_POS,
   RADIO_FLOAT_HEIGHT,
   playWakeDialogue,
-  stopMenuAmbience
+  stopMenuAmbience,
+  RADIO_TOWER_POS,
+  radioTowerHeight,
+  getRadioTowerBeaconLight: () => radioTowerBeaconLight,
+  getRadioTowerPulseRings: () => radioTowerPulseRings,
+  updateRadioTowerBeacon
 });
 let radioFloatCommented = false;
 let radioFloatCooldown = 0;
@@ -2808,43 +2786,6 @@ window.addEventListener('resize', ()=>{
 window.addEventListener('orientationchange', updateRotateOverlay);
 updateRotateOverlay();
 
-let titleCamYaw = Math.PI * 0.15;
-// state.started goes false for three different reasons now (title screen
-// not begun yet, bigmap open/paused, ending fired) but only the first one
-// should ever snap the 3D camera into the idle title-screen orbit. Without
-// this separate flag, opening the bigmap or reaching the ending both fell
-// into the same `if(!state.started) updateTitleCam(dt)` branch and the
-// camera silently drifted to the orbit shot behind the overlay - so
-// closing the bigmap (or, worse, the ending sequence) left the camera
-// somewhere the player never pointed it.
-// state.titleScreenActive lives in core/state.js (moved off a bare `let`
-// export in ui/titleScreen.js - see the comment there for why).
-//
-// Previously this orbited tight (radius 2.2) right at the tower's own
-// base, which is why the title screen read as flat black in practice -
-// standing under a 58-unit lattice tower looking mostly straight up
-// doesn't show its silhouette, it shows dark steel filling the frame.
-// Pulled back to a real establishing distance and swapped the continuous
-// 360 spin for a slow, bounded arc-sway (so the tower/beacon never spins
-// out of frame for half the loop) plus a small sine/cosine bob standing
-// in for "camera motion" - a completely still orbit reads as a stock
-// photo, a handheld sway reads as someone actually standing there.
-function updateTitleCam(dt){
-  titleCamYaw += dt*0.05;
-  const bearing = Math.PI*0.15 + Math.sin(titleCamYaw*0.18)*0.5; // bounded sway, not a full orbit
-  const orbitR = 32;
-  const cx = Math.sin(bearing)*orbitR, cz = Math.cos(bearing)*orbitR;
-  const y = terrainHeight(cx, cz);
-  const bob = Math.sin(titleCamYaw*0.9)*0.05 + Math.cos(titleCamYaw*0.55)*0.035;
-  camera.position.set(cx, y + EYE_HEIGHT + 1.1 + bob, cz);
-  const lookTarget = new THREE.Vector3(
-    RADIO_TOWER_POS.x + Math.sin(titleCamYaw*0.7)*0.4,
-    (radioTowerHeight||58)*0.5,
-    RADIO_TOWER_POS.z
-  );
-  camera.lookAt(lookTarget);
-}
-
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
@@ -2893,12 +2834,7 @@ function animate(){
     updateDust(dt);
     updateRain(dt);
     updateLamps(dt);
-    updateWorldStream();
-    if(state.titleScreenActive){
-      updateTitleCam(dt);
-      updateRadioTowerBeacon();
-    }
-    updateTitlePulseRings(dt, state.titleScreenActive);
+    updateTitleScene(dt);
     tickMenuIdle();
   }
 

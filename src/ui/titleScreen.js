@@ -49,12 +49,13 @@
 // unrelated wiring (menu button listeners, credits, etc. - out of scope
 // for this pull). Same reasoning safehouse.js used for vignetteEl.
 
-import { state } from '../core/state.js';
-import { clock } from '../core/scene.js';
+import { state, EYE_HEIGHT } from '../core/state.js';
+import { clock, scene, camera } from '../core/scene.js';
 import { getAudioCtx, initAudio } from '../systems/audio.js';
 import { userVolume } from '../systems/settings.js';
 import { SAFEHOUSE_DOOR_YAW } from '../world/safehouse.js';
-import { groundHeightAt } from '../world/terrain.js';
+import { groundHeightAt, terrainHeight } from '../world/terrain.js';
+import { updateWorldStream } from '../world/streaming.js';
 
 // See HOTFIX #5 above: these come in via registerMainRefs(), called once
 // from main.js after the real values exist, instead of a static import
@@ -68,12 +69,29 @@ let _RADIO_PICKUP_POS = null;
 let _RADIO_FLOAT_HEIGHT = 0;
 let _playWakeDialogue = () => {};
 let _stopMenuAmbience = () => {};
+// Radio tower refs, for the idle-title-screen camera/pulse logic below -
+// same reasoning as getRadioPickupMesh above for why the beacon light/
+// rings come in as a getter (built once but this file shouldn't assume
+// WHEN relative to its own top-level code) rather than importing straight
+// from main.js (that's the exact cycle HOTFIX #5 removed - see the top of
+// this file). RADIO_TOWER_POS/radioTowerHeight are plain values since
+// they're set once at tower-build time and never reassigned after.
+let _RADIO_TOWER_POS = { x:0, z:0 };
+let _radioTowerHeight = 58;
+let getRadioTowerBeaconLight = () => null;
+let getRadioTowerPulseRings = () => null;
+let _updateRadioTowerBeacon = () => {};
 export function registerMainRefs(refs){
   getRadioPickupMesh = refs.getRadioPickupMesh;
   _RADIO_PICKUP_POS = refs.RADIO_PICKUP_POS;
   _RADIO_FLOAT_HEIGHT = refs.RADIO_FLOAT_HEIGHT;
   _playWakeDialogue = refs.playWakeDialogue;
   _stopMenuAmbience = refs.stopMenuAmbience;
+  if(refs.RADIO_TOWER_POS) _RADIO_TOWER_POS = refs.RADIO_TOWER_POS;
+  if(refs.radioTowerHeight) _radioTowerHeight = refs.radioTowerHeight;
+  if(refs.getRadioTowerBeaconLight) getRadioTowerBeaconLight = refs.getRadioTowerBeaconLight;
+  if(refs.getRadioTowerPulseRings) getRadioTowerPulseRings = refs.getRadioTowerPulseRings;
+  if(refs.updateRadioTowerBeacon) _updateRadioTowerBeacon = refs.updateRadioTowerBeacon;
 }
 
 const $ = id => document.getElementById(id);
@@ -404,3 +422,91 @@ $('begin-btn').addEventListener('click', ()=>{
       _playWakeDialogue();
     });
 });
+
+/* ---------- IDLE TITLE-SCREEN 3D SCENE ----------
+   The camera framing, radio pulse rings, and world-streaming that make
+   the title screen actually show something behind the DOM overlay above
+   (see index.html's #title-screen comment: "the 3D scene is already
+   rendering behind this the whole time"). This used to live inline in
+   main.js's animate() loop - technically working, but title-screen
+   presentation is this file's whole reason to exist, not main.js's, and
+   main.js's animate() is already a few thousand lines it doesn't need
+   more of. Moved here now that core/scene.js confirmed safe to import
+   directly (no dependency on main.js - see the module-level comment
+   block at the top of this file on why that check specifically matters
+   before importing anything back toward main.js's side of the graph).
+   The tower's actual mesh/light/ring objects still get BUILT in main.js
+   (that's genuinely still main.js's scope - scene construction, not
+   title-screen presentation), reaching this file through
+   registerMainRefs() same as the radio pickup mesh above. */
+
+let titleCamYaw = Math.PI * 0.15;
+// Pulled back from an early version that orbited tight (radius 2.2)
+// right at the tower's own base - standing under a 58-unit lattice tower
+// looking mostly straight up doesn't show a silhouette, it shows dark
+// steel filling the frame, which is why the title screen was reading as
+// flat black in practice even before the world-streaming gap (below) was
+// found and fixed. A real establishing distance, a slow BOUNDED arc-sway
+// (not a full 360 spin, so the tower/beacon never swings out of frame
+// for half the loop) plus a small sine/cosine bob standing in for
+// handheld camera motion - a completely still shot reads as a stock
+// photo, a slight sway reads as someone actually standing there.
+function updateTitleCam(dt){
+  titleCamYaw += dt*0.05;
+  const bearing = Math.PI*0.15 + Math.sin(titleCamYaw*0.18)*0.5;
+  const orbitR = 32;
+  const cx = Math.sin(bearing)*orbitR, cz = Math.cos(bearing)*orbitR;
+  const y = terrainHeight(cx, cz);
+  const bob = Math.sin(titleCamYaw*0.9)*0.05 + Math.cos(titleCamYaw*0.55)*0.035;
+  camera.position.set(cx, y + EYE_HEIGHT + 1.1 + bob, cz);
+  const lookTarget = {
+    x: _RADIO_TOWER_POS.x + Math.sin(titleCamYaw*0.7)*0.4,
+    y: _radioTowerHeight*0.5,
+    z: _RADIO_TOWER_POS.z
+  };
+  camera.lookAt(lookTarget.x, lookTarget.y, lookTarget.z);
+}
+
+// Radio pulse rings: expanding "ping" rings pooled/built once in main.js
+// at the beacon (see registerMainRefs above), only actually animated
+// here during the idle title screen. Explicitly zeroes out and returns
+// once titleScreenActive goes false, rather than just not being called
+// anymore, so a ring mid-fade when the player hits "Remember" doesn't
+// hang there frozen at whatever opacity/scale it last had.
+let titlePulseClock = 0;
+const PULSE_PERIOD = 2.6, PULSE_MAX_R = 22, PULSE_RING_COUNT = 3;
+function updateTitlePulseRings(dt, active){
+  const rings = getRadioTowerPulseRings();
+  if(!rings) return;
+  if(!active){
+    if(titlePulseClock !== 0){
+      titlePulseClock = 0;
+      rings.forEach(r=>{ r.visible = false; r.material.opacity = 0; });
+    }
+    return;
+  }
+  titlePulseClock += dt;
+  rings.forEach((ring, i)=>{
+    const phase = ((titlePulseClock/PULSE_PERIOD) + i/PULSE_RING_COUNT) % 1;
+    const r = 0.6 + phase*PULSE_MAX_R;
+    ring.visible = true;
+    ring.scale.setScalar(r);
+    ring.material.opacity = (1-phase) * 0.4;
+  });
+}
+
+// Single per-frame entry point main.js's animate() calls during its idle
+// (!state.started) branch, replacing the three separate inline calls
+// that used to sit there. World streaming keeps running even if the
+// player's paused at the bigmap or hit an ending (titleScreenActive is
+// false in both those cases too, same as before this move) - only the
+// camera/beacon/rings are actually gated to the title screen itself.
+export function updateTitleScene(dt){
+  updateWorldStream();
+  const active = state.titleScreenActive;
+  if(active){
+    updateTitleCam(dt);
+    _updateRadioTowerBeacon();
+  }
+  updateTitlePulseRings(dt, active);
+}
