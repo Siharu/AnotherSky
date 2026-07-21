@@ -1,6 +1,186 @@
-# Another Sky — Handoff Notes (updated — HUD proposal complete: system clock, weather label, compass ruler, objective panel, dialogue box glitch-border restyle all shipped)
+# Another Sky — Handoff Notes (updated — kitchen door's proximity trigger was overlapping the notebook table (door kept swinging while the player used it), fixed; notebook interaction point aligned to the actual prop mesh)
 
 ## Development
+
+## This round: notebook table regression from the interior-door round
+
+Prompted by "the notebook to save is also at weird position." Checked
+the notebook mesh itself first (position math against the table it
+sits on) - it's fully within the table's bounds, not actually
+misplaced on the table. The real issue was one room over: last round's
+interior swing doors used a flat `radius: 2.4` proximity trigger for
+all three, and the kitchen door's trigger point is only 1.79 units from
+the notebook table - well inside that radius. So the kitchen door was
+swinging open and shut continuously the entire time the player stood
+at the table using the notebook, which is exactly the kind of thing
+that reads as "something's off here" without being obviously the
+notebook's fault. Shrunk the trigger radius to 1.5 (still comfortably
+triggers on a normal approach/exit, table's now outside it). Also
+caught and fixed a smaller mismatch while in there: `NOTEBOOK_POS`
+(what `state.nearNotebook`'s `facingTarget()` check uses) was the
+table's bare center, but the notebook mesh itself is offset from that
+(`tableX-0.1, tableZ+0.05`) - aligned the two so the interaction point
+matches where the physical prop actually sits.
+
+---
+
+## This round: interior swing doors + wall-connectivity audit
+
+Prompted by "all the rooms should have openable doors which can be
+opened and closed / the walls should be properly connected / the
+rooms/tables/doors/tv placement doesn't look good enough." Three
+different asks, handled separately rather than guessed at together:
+
+1. **Openable/closable interior doors - built, real feature.** Before
+   this round, three of the six room-to-room connections (kitchen<->
+   living, living<->vestibule, vestibule<->storage) were bare open
+   gaps in the wall - a walk-through hole, no door leaf mesh at all.
+   The only doors that existed as actual objects were the main
+   entrance (permanently ajar, idle sway, not player-toggleable), and
+   the locked room's quest door (opens once, permanently, via
+   `tryLockedDoor()`). Added a new `addInteriorSwingDoor()` helper in
+   `world/safehouse.js` and used it for all three bare gaps: each gets
+   a real hinged leaf, closed by default, that swings open as the
+   player approaches (proximity check against `state.playerX/Z` each
+   frame in `updateSafehouseInterior()`, eased rotation - same
+   easing-toward-target language the locked door's open animation
+   already used) and swings shut again once they've moved past it -
+   genuinely openable *and* closable, not one-way. Also gave each one
+   its own lintel from day one (see the locked-door lintel bug from
+   last round) so they don't repeat that mistake. New pivots tracked in
+   module-scope `interiorDoorPivots`, reset at the top of
+   `buildSafehouse()` in case it's ever rebuilt. Radio room<->vestibule
+   deliberately still has no leaf - that's called out as intentional
+   ("no leaf, per sketch") in the original room-layout comment, not
+   something missed.
+   **Not yet visually verified in a live render** - the swing direction
+   per door (`swingSign`, ±1) was picked by reasoning about which side
+   of each doorway has open floor vs. nearby furniture (kitchen: swings
+   into the kitchen's open floor, away from the counter; vestibule:
+   swings clear of the coat rack), but that's code-review reasoning,
+   not a screenshot check. If a door swings into a wall or furniture
+   in practice, flip its `swingSign` argument - one line each.
+
+2. **Wall connectivity - audited, no new bugs found.** Mapped every
+   `addWallGapX`/`addWallGapZ` call's x/z range against its neighbors
+   to check every divider tiles continuously with no double-coverage or
+   missing coverage at the corners. All six room-to-room dividers plus
+   the four outer walls check out - the only "walls not properly
+   connected" issue on record was the locked-door lintel gap fixed last
+   round (a door-leaf-vs-opening-height mismatch, not a wall-segment
+   gap). If something still reads as broken here, it's more likely
+   another instance of that same lintel-style bug (leaf shorter than
+   its opening) than a gap in the wall segments themselves - worth a
+   screenshot of specifically what looks wrong next time, the same way
+   the furniture-overlap bugs got found and fixed.
+
+3. **Table/door/TV placement "doesn't look good enough" - not acted on
+   this round.** This is a subjective visual read, not something
+   provable from geometry math the way the shelf/nightstand/fridge
+   overlaps were. Checked the one candidate with actual numbers (the
+   radio room's CRT monitor + desk, the closest thing in this codebase
+   to a "TV") and found no clipping - it sits properly within the
+   desk's bounds. Beyond that, guessing at "arrange this room better"
+   from code alone would just be trading one unverified layout for
+   another. Needs a screenshot (or a few, per room) to work from, same
+   as the reference mockup did for the HUD and the locked-door photo
+   did for the gap bug - both of those turned into fast, concrete fixes
+   once there was something to look at.
+
+---
+
+## This round: safehouse furniture-placement audit (walls/objects reported as "broken")
+
+Prompted by "walls sometimes are broken, objects aren't properly
+placed - shelf is middle of wall etc." Rather than guess from the
+description, mapped every door gap in `world/safehouse.js`'s floor plan
+against every furniture position anchored near a wall constant
+(`KITCHEN_DIV_X`, `LR_DIV_X`, `STORAGE_DIV_X`, `VEST_DIV_X`,
+`SAFEHOUSE_HALF_W`/`_D`) and checked each one with actual interval-
+overlap arithmetic (script run via `bash_tool`, not eyeballed) before
+touching any code. Found three real, provable overlaps:
+
+1. **Living-area shelf, inside the kitchen doorway** - `shelfZ` was
+   `tableZ-1.3` (-3.7), which falls inside the kitchen door's own gap
+   on that wall (`KITCHEN_DOOR_Z ± KITCHEN_DOOR_HALF` = [-4.05,-2.35]) -
+   there's no wall there at all at that Z, so the shelf rendered
+   floating in the open doorway instead of mounted on anything. This is
+   almost certainly what read as "shelf is middle of wall." Moved it
+   north into the solid wall segment between the door's edge and the
+   `DIV_Z` corner, derived from those same door constants so it can't
+   drift back into the gap if the door position ever changes.
+
+2. **Radio-room nightstand, inside the cot** - `BED_TABLE_POS` used the
+   *exact same X* as the cot's own center (`cotX = LR_DIV_X+1.35`) with
+   only 0.3 of Z separation - the nightstand mesh rendered directly
+   inside the cot's footprint rather than beside it. Moved south of the
+   headboard, near the same wall, fully clear of the cot's z-span
+   ([6.1, 7.1]). `main.js`'s `state.nearBedTable` interaction check
+   reads `BED_TABLE_POS` directly, so the "search the bed table"
+   trigger radius moved with it automatically - nothing else to update.
+
+3. **Kitchen fridge, clipping through the west wall** - `fridgeX` was
+   `kX-1.8` (-10.8); with the fridge's 0.7 width, its left edge landed
+   at -11.15 - past the wall's own inner face (-10.85) - so roughly 40%
+   of the fridge was rendering inside the wall geometry. Moved to
+   `kX-1.4`, edge now at -10.75, flush against the wall instead of
+   through it.
+
+Checked but left alone (ambiguous, not a provable overlap): the kitchen
+counter/backsplash sits ~0.94 units short of the nearest wall it could
+be flush against - might be intentional clearance, might not be, but
+there's no hard collision to point to the way there was for the three
+above. Worth a screenshot check next time someone's actually in the
+kitchen, not something to guess-fix from geometry alone.
+
+---
+
+## This round: locked-door lintel fix + dialogue box/objective panel restructure
+
+Follow-up to the HUD proposal round below - the shipped version had two
+real problems once actually seen in-game (screenshot review, not just
+code review): the locked door had a visible gap into the void behind
+it, and the dialogue box / objective panel didn't match the reference
+mockup's structure.
+
+1. **Locked door void gap (real bug, not a style issue)** -
+   `world/safehouse.js`'s locked-room doorway is cut at the *full* wall
+   height (`SAFEHOUSE_WALL_H`, 3.1) via `addWallGapX()`, but the door
+   mesh itself is only `SAFEHOUSE_WALL_H-0.3` (2.8) tall - a bare
+   0.3-unit strip at the top of the opening had nothing covering it, a
+   real hole through to the sealed void behind. The main entrance door
+   has a `lintel` mesh that closes this exact same gap (search
+   `SAFEHOUSE_WALL_H-0.15` a few lines above); the locked door never
+   got one. Added a matching lintel. The RGB hue-cycling on the door
+   itself is intentional (`updateSafehouseInterior()`, "something's
+   holding this shut" glitch, calms down once `state.relayActive`) -
+   that part was never the bug, it just read as much more broken with
+   a hole letting the void bleed through right next to it.
+
+2. **Objective panel restructured** - previous version (see HUD
+   proposal round) was floating text with no container and a
+   per-quest status word/completed-quest history that didn't match the
+   reference. Now: an "OBJECTIVE" section label with an underline,
+   the current objective as a dash-prefixed rust-red line, and just
+   the next upcoming one dimmed underneath - completed objectives are
+   dropped entirely rather than kept on-screen. Deliberately did NOT
+   add the reference's "[☰] LOG ●" header row - that would have
+   duplicated the real hub/radio icons already sitting in `#top-bar`
+   directly above this panel's new position (`top:calc(58px + ...)`,
+   stacked below them instead of overlapping).
+
+3. **Dialogue box restructured** - root cause of the previous "doesn't
+   match the reference" complaint: `#wake-dialogue` had no fixed width,
+   just a `max-width` that let it grow with text length, so a long line
+   stretched it almost full-screen and pushed the `[ CH 0.3 ]` tag
+   toward the edge where it got hard to read. Now `width:min(640px,
+   82vw)` regardless of content, left-aligned text (was centered),
+   thinner hairline border matching the reference's look, and two new
+   `.wd-corner` spans for the top-right/bottom-left corners so all four
+   are marked (the existing `::before`/`::after` scratch accents only
+   covered two - both pseudo-element slots were already spoken for).
+
+---
 
 Standing section, not a round-by-round log entry - update this in place
 as items get done rather than adding new dated entries for it. Covers

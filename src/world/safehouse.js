@@ -110,18 +110,38 @@ const RADIO_VEST_GAP_HALF = 1.3; // radio room <-> vestibule, open gap in the DI
 const MAIN_DOOR_X = 5.4; // vestibule's south (teleport) door - roughly centered in the vestibule span
 
 let safehouseLampPivot = null, safehouseDoorPivot = null, lockedDoorPivot = null;
+// Kitchen<->living, living<->vestibule, and vestibule<->storage were all
+// bare open gaps with no door leaf at all - just walk-through openings.
+// interiorDoorPivots holds the new swinging leaves added for those three
+// (radio room<->vestibule stays a leafless open gap - "no leaf, per
+// sketch" per the original room-layout comment, that one's intentional).
+// Each entry: { pivot, x, z, radius } - x/z is the doorway's world-ish
+// local center, radius is the proximity trigger updateSafehouseInterior()
+// checks the player against each frame to swing it open/closed.
+let interiorDoorPivots = [];
 const NOTEBOOK_POS = {
-  x: SAFEHOUSE_CENTER.x + (KITCHEN_DIV_X + 1.6),
-  z: SAFEHOUSE_CENTER.z + (-2.4)
+  // was the table's bare center (KITCHEN_DIV_X+1.6, -2.4) - the notebook
+  // mesh itself actually sits offset from that (tableX-0.1, tableZ+0.05,
+  // see the notebook mesh below), so the interaction trigger point
+  // didn't quite line up with the physical prop. Matched to the mesh's
+  // real position.
+  x: SAFEHOUSE_CENTER.x + (KITCHEN_DIV_X + 1.6 - 0.1),
+  z: SAFEHOUSE_CENTER.z + (-2.4 + 0.05)
 }; // living area, against the kitchen-side wall - always reachable, no quest gate
 const LOCKED_DOOR_POS = {
   x: SAFEHOUSE_CENTER.x + LOCKED_DOOR_X,
   z: SAFEHOUSE_CENTER.z + DIV_Z
 };
 const BED_TABLE_POS = {
-  x: SAFEHOUSE_CENTER.x + (LR_DIV_X + 1.35),
-  z: SAFEHOUSE_CENTER.z + (SAFEHOUSE_HALF_D - 1.7)
-}; // radio room, beside the cot's headboard end
+  // was (LR_DIV_X+1.35, HALF_D-1.7) - the exact same X as the cot's own
+  // center (cotX = LR_DIV_X+1.35 below) with only 0.3 of Z clearance
+  // from it, so the nightstand rendered *inside* the cot's footprint
+  // instead of beside it. Moved to sit near the same wall but south of
+  // the headboard, clear of the cot's full z-span (cotZ ± cotD/2 =
+  // [6.1, 7.1]) entirely.
+  x: SAFEHOUSE_CENTER.x + (LR_DIV_X + 0.5),
+  z: SAFEHOUSE_CENTER.z + (SAFEHOUSE_HALF_D - 2.5)
+}; // radio room, beside the cot's headboard end, south of the cot itself
 
 // Ground-up rebuild, ported from the previous single-box safehouse. Every
 // interior material still carries its own baked-in `emissive` floor - a
@@ -250,6 +270,7 @@ function updateCRTScreen(skyClock, dt){
 }
 
 function buildSafehouse(){
+  interiorDoorPivots = [];
   const { x: cx, z: cz } = SAFEHOUSE_CENTER;
   const y = groundHeightAt(cx, cz);
   const group = new THREE.Group();
@@ -357,6 +378,41 @@ function buildSafehouse(){
   lockedLintel.position.set(LOCKED_DOOR_X, SAFEHOUSE_WALL_H - (SAFEHOUSE_WALL_H-lockedDoorH)/2 + 0.02, DIV_Z);
   group.add(lockedLintel);
   obstacles.push({ x: cx+LOCKED_DOOR_X, z: cz+DIV_Z, type:'rect', hw: lockedDoorW/2, hd: 0.1, radius: lockedDoorW/2 });
+
+  // ---- interior swing doors: kitchen<->living, living<->vestibule,
+  // vestibule<->storage. All three were bare open gaps before - a
+  // walk-through hole in the wall with nothing in it, no leaf at all.
+  // These are real doors now: closed by default, swinging open on their
+  // own as the player approaches (proximity check + easing, same
+  // language as the locked door's open animation above) and swinging
+  // shut again once they've moved away - see updateSafehouseInterior()
+  // for the per-frame proximity logic. (radio room<->vestibule stays a
+  // leafless open gap on purpose - "no leaf, per sketch" per the
+  // room-layout comment up top - that one's deliberate, not missed.)
+  function addInteriorSwingDoor(wallX, gapCenterZ, gapHalf, swingSign){
+    const leafH = SAFEHOUSE_WALL_H-0.32, leafLen = gapHalf*2-0.08;
+    const hingeZ = gapCenterZ - swingSign*(gapHalf-0.04);
+    const pivot = new THREE.Group();
+    pivot.position.set(wallX, leafH/2, hingeZ);
+    group.add(pivot);
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(0.06, leafH, leafLen), doorMat);
+    leaf.position.set(0, 0, swingSign*leafLen/2);
+    pivot.add(leaf);
+    // small lintel closing the same top-of-opening gap the locked door
+    // was missing, so these don't repeat that bug on day one
+    const doorLintel = new THREE.Mesh(new THREE.BoxGeometry(0.1, SAFEHOUSE_WALL_H-leafH+0.06, gapHalf*2+0.14), braceMat);
+    doorLintel.position.set(wallX, SAFEHOUSE_WALL_H-(SAFEHOUSE_WALL_H-leafH)/2+0.02, gapCenterZ);
+    group.add(doorLintel);
+    // radius was 2.4 - reached the notebook table (only 1.79 units from
+    // the kitchen door), so that door was perpetually swinging open and
+    // shut the entire time the player sat there using the notebook.
+    // 1.5 still comfortably triggers on approach/exit without reaching
+    // into a nearby furniture-use spot.
+    interiorDoorPivots.push({ pivot, x: wallX, z: gapCenterZ, swingSign, radius: 1.5, openAngle: swingSign*1.35 });
+  }
+  addInteriorSwingDoor(KITCHEN_DIV_X, KITCHEN_DOOR_Z, KITCHEN_DOOR_HALF, -1); // swings into the kitchen (open floor near the door there)
+  addInteriorSwingDoor(VEST_DIV_X, VEST_DOOR_Z, VEST_DOOR_HALF, 1); // swings into the vestibule (clear of the coat rack, which sits further south)
+  addInteriorSwingDoor(STORAGE_DIV_X, STORAGE_DOOR_Z, STORAGE_DOOR_HALF, -1); // swings into the vestibule side, clear of the storage shelving/crates further north
 
 
   // windows - west wall (locked room, cosmetic only - nothing to see
@@ -636,7 +692,15 @@ function buildSafehouse(){
   chairBack.position.set(chairX, seatH+0.24, chairZ-seatSize/2+0.03);
   group.add(chairBack);
 
-  const shelfX = KITCHEN_DIV_X+0.18, shelfZ = tableZ-1.3, shelfY = 1.9;
+  // shelfZ was tableZ-1.3 (-3.7), which lands inside the kitchen door's
+  // open gap on this same wall (KITCHEN_DOOR_Z ± KITCHEN_DOOR_HALF =
+  // [-4.05,-2.35]) - there's no wall there at all, so the shelf floated
+  // in the open doorway instead of being mounted on anything. Moved it
+  // north of the gap, into the solid wall segment that runs from the
+  // door's edge up to the DIV_Z corner (derived from those same
+  // constants rather than a bare number, so it can't drift back into
+  // the gap if the door position ever changes).
+  const shelfX = KITCHEN_DIV_X+0.18, shelfZ = KITCHEN_DOOR_Z+KITCHEN_DOOR_HALF+1.05, shelfY = 1.9;
   const shelfLen = 1.4, shelfDepth = 0.28;
   const shelfTop = new THREE.Mesh(new THREE.BoxGeometry(shelfDepth, 0.05, shelfLen), tabletopMat);
   shelfTop.position.set(shelfX, shelfY, shelfZ);
@@ -744,7 +808,12 @@ function buildSafehouse(){
 
     // fridge - tall worn-metal cabinet where the old wardrobe stood,
     // door + a horizontal handle bar
-    const fridgeX = kX-1.8, fridgeZ = kZ+1.7;
+    // fridgeX was kX-1.8 (-10.8): with the fridge's 0.7 width, its left
+    // edge landed at -11.15 - past the west wall's own inner face
+    // (-SAFEHOUSE_HALF_W + SAFEHOUSE_WALL_T/2 = -10.85), so roughly
+    // 40% of the fridge was rendering inside the wall. kX-1.4 puts the
+    // left edge at -10.75, flush against the wall with a small gap.
+    const fridgeX = kX-1.4, fridgeZ = kZ+1.7;
     const fridge = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.9, 0.5), applianceMat2);
     fridge.position.set(fridgeX, 0.95, fridgeZ);
     group.add(fridge);
@@ -1056,6 +1125,18 @@ function updateSafehouseInterior(skyClock, dt){
         mesh.material.color.setHSL((skyClock*0.4)%1, 0.85, 0.5+Math.sin(g*2)*0.15);
       }
     }
+  }
+
+  // interior swing doors (kitchen/vestibule/storage) - open when the
+  // player's within radius of the doorway, ease shut again once they've
+  // moved past it. state.playerX/Z are the same local-offset coordinates
+  // these doors were built in (both relative to SAFEHOUSE_CENTER), so no
+  // conversion needed here.
+  for(const d of interiorDoorPivots){
+    const dx = state.playerX - (SAFEHOUSE_CENTER.x + d.x), dz = state.playerZ - (SAFEHOUSE_CENTER.z + d.z);
+    const near = (dx*dx + dz*dz) < d.radius*d.radius;
+    const target = near ? d.openAngle : 0;
+    d.pivot.rotation.y += (target - d.pivot.rotation.y)*0.08;
   }
 }
 
