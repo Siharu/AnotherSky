@@ -26,6 +26,8 @@ import {
   exitRoadDirX, exitRoadDirZ,
 } from '../world/worldData.js';
 import { ghuulList } from '../entities/ghuuls.js';
+import { getNearbySquallCount } from '../sky/weather.js';
+import { getActiveQuests } from '../systems/quests.js';
 //
 // Still owed: updateMinimap() itself, and the icon-button click-handler
 // wiring (radio/pause/interact - currently still in main.js, tangled
@@ -56,8 +58,99 @@ export function flashAutosaveIndicator(label){
 export const minimapCanvas = document.getElementById('minimap-canvas');
 export const minimapCtx = minimapCanvas ? minimapCanvas.getContext('2d') : null;
 
+/* ---------- WEATHER LABEL ----------
+   Reads getNearbySquallCount() (see sky/weather.js) rather than any
+   authored weather-state - a fuzzy read of what's actually rendering
+   near the player, not a designed intensity level (see docs/HANDOFF.md).
+   0 cells nearby -> LIGHT, 1-2 -> RAIN, 3+ -> HEAVY (RAIN_CELL_COUNT is
+   6 total, so 3+ nearby is already a real cluster). Only re-touches the
+   DOM on a tier change, same "skip unchanged writes" caution as
+   updateDread()'s filter attributes. */
+const weatherLabelEl = document.getElementById('weather-label');
+const weatherLabelCondEl = document.getElementById('weather-label-cond');
+let lastWeatherTier = null;
+export function updateWeatherLabel(){
+  if(!weatherLabelEl || !weatherLabelCondEl) return;
+  const n = getNearbySquallCount();
+  const tier = n<=0 ? 'light' : (n<=2 ? 'rain' : 'heavy');
+  if(tier===lastWeatherTier) return;
+  lastWeatherTier = tier;
+  weatherLabelCondEl.textContent = tier==='light' ? 'CLEAR' : (tier==='rain' ? 'RAIN' : 'HEAVY RAIN');
+  weatherLabelEl.classList.remove('tier-light','tier-rain','tier-heavy');
+  weatherLabelEl.classList.add('tier-'+tier);
+  weatherLabelEl.classList.add('visible');
+}
+
 export const radioBtn = document.getElementById('radio-btn');
 export const radioTicker = document.getElementById('radio-ticker');
+
+/* ---------- OBJECTIVE PANEL ----------
+   Reads getActiveQuests(state) (systems/quests.js) - already gated to
+   return [] until the radio's been picked up, so this panel just stays
+   empty/hidden until then, same as the source data. Update cadence:
+   called every frame from animate() like updateWeatherLabel(), but
+   builds a cheap signature string (id:have:label per quest) and skips
+   all DOM work when nothing's actually changed - objective state only
+   moves on real game events (pickup, door unlock, etc), not per-frame,
+   so re-writing innerHTML 60x/sec would be pure waste. "Current"
+   objective (bold/bright, matching the mockup) is the first not-yet-
+   complete one; once all are complete the last one stays marked
+   current rather than the panel going dark. Completed ones get a
+   strikethrough on top of the dim styling so progress reads as
+   progress, not just as another faded line. */
+const objectivePanelEl = document.getElementById('objective-panel');
+let lastObjectiveSig = null;
+export function updateObjectivePanel(){
+  if(!objectivePanelEl) return;
+  const quests = getActiveQuests(state);
+  if(!quests.length){
+    if(lastObjectiveSig !== ''){
+      lastObjectiveSig = '';
+      objectivePanelEl.innerHTML = '';
+      objectivePanelEl.classList.remove('visible');
+    }
+    return;
+  }
+  const sig = quests.map(q => `${q.id}:${q.have}:${q.label}`).join('|');
+  if(sig === lastObjectiveSig) return;
+  lastObjectiveSig = sig;
+  const currentIdx = quests.findIndex(q => !q.have);
+  const activeIdx = currentIdx===-1 ? quests.length-1 : currentIdx;
+  objectivePanelEl.innerHTML = quests.map((q,i) => {
+    const cls = i===activeIdx ? 'obj-row current' : (q.have ? 'obj-row complete' : 'obj-row');
+    return `<div class="${cls}"><span class="obj-name">${q.name}</span><span class="obj-status">${q.label}</span></div>`;
+  }).join('');
+  objectivePanelEl.classList.add('visible');
+}
+
+/* ---------- SYSTEM CLOCK ----------
+   Real-world wall clock (not game time - state.elapsed is a separate
+   thing), 12-hour with AM/PM per the mockup ("03:17 AM"). Ticks itself
+   via its own setInterval rather than being driven from animate()'s
+   per-frame loop - a minute-resolution display has no business being
+   recomputed 60x/sec, and this way it keeps ticking even while paused/
+   on menus. Self-starting at module load, aligned to the next real
+   minute boundary so it doesn't drift. */
+const hudClockEl = document.getElementById('hud-clock');
+function formatClock(d){
+  let h = d.getHours();
+  const ampm = h>=12 ? 'PM' : 'AM';
+  h = h % 12; if(h===0) h = 12;
+  const hh = String(h).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  return `${hh}:${mm} ${ampm}`;
+}
+function tickClock(){
+  if(hudClockEl) hudClockEl.textContent = formatClock(new Date());
+}
+if(hudClockEl){
+  tickClock();
+  const msToNextMinute = 60000 - (Date.now() % 60000);
+  setTimeout(()=>{
+    tickClock();
+    setInterval(tickClock, 60000);
+  }, msToNextMinute);
+}
 
 /* ---------- MINIMAP ----------
    Draws a ~30m-radius radar view once unlocked at the radio tower:

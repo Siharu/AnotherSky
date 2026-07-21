@@ -1,4 +1,4 @@
-# Another Sky — Handoff Notes (updated — idle title screen actually renders now (real world-streaming gap, not a lighting/camera issue), title-scene logic moved out of main.js into ui/titleScreen.js, bigmap.js missing-import crash fixed, settings panel redesigned, thunder flash de-blinded)
+# Another Sky — Handoff Notes (updated — HUD proposal complete: system clock, weather label, compass ruler, objective panel, dialogue box glitch-border restyle all shipped)
 
 ## Development
 
@@ -84,78 +84,67 @@ above, but same theme):**
 
 ---
 
-## Still open: HUD proposal (system clock, weather label, compass upgrade, objective panel, dialogue box restyle)
+## HUD proposal status (system clock, weather label, compass upgrade, objective panel, dialogue box restyle)
 
-Not built this round - the person shared a mockup (in-fiction terminal
-HUD: ruler-style compass with a moving pointer, real-world clock,
-"OUTSIDE / HEAVY RAIN" weather label, an objective checklist panel, and
-a glitch-bordered dialogue box with a channel tag) and asked for this to
-be scoped for whoever picks it up next, not implemented immediately -
-five different-sized asks bundled into one screenshot, worth splitting
-rather than building blind. Per-item reality check below; some of this
-is a restyle, some is a real feature with nothing behind it yet.
+Five-item mockup (in-fiction terminal HUD: ruler-style compass with a
+moving pointer, real-world clock, "OUTSIDE / HEAVY RAIN" weather label,
+an objective checklist panel, and a glitch-bordered dialogue box with a
+channel tag), originally just scoped, then built out across sessions.
+**All 5 shipped.**
 
-1. **System clock** - genuinely trivial, nothing exists yet. Real-world
-   time, not in-game time - `new Date().toLocaleTimeString()` (or format
-   by hand for the `03:17 AM` look specifically), a `setInterval`
-   ticking once a minute is plenty. No design decisions here beyond
-   picking a DOM spot and matching the mono HUD font already used
-   elsewhere (`ui/hud.js`'s existing labels).
+1. ~~**System clock**~~ - shipped. `#hud-clock` (`index.html`, sits in
+   `#top-bar`'s previously-empty left slot) + `formatClock()`/
+   `tickClock()` in `ui/hud.js`. Real-world time (12-hour, `03:17 AM`
+   style), not in-game time. Self-starting at module load, aligned to
+   the next real minute boundary via one `setTimeout` then a 60s
+   `setInterval` - not driven from `animate()`, so it keeps ticking on
+   menus/pause and never runs 60x/sec for a once-a-minute display.
 
-2. **Weather label ("OUTSIDE / HEAVY RAIN")** - also nothing exists yet,
-   but *less trivial than it looks*: checked `sky/weather.js` directly -
-   there is no discrete weather-state variable to read from. Rain runs
-   as an always-on ambient particle system (`RAIN_COUNT`/`updateRain()`,
-   squall "cells" drifting through unpredictably), not a toggled
-   "raining: true/false" or an intensity level stored anywhere. Two real
-   options, not just one hookup: (a) derive an approximate label from
-   how many squall cells are currently active/dense near the player
-   (cheap, stays true to what's actually rendering, but "HEAVY RAIN" vs
-   "LIGHT RAIN" would be a fuzzy read of particle density rather than an
-   authored state), or (b) introduce an actual small weather-state
-   concept (`state.weather` or similar, a handful of named levels) that
-   both the rain system and this label read from - more work, but an
-   honest single source of truth instead of two systems each guessing at
-   the same thing. Worth deciding which before starting, not mid-build.
+2. ~~**Weather label ("OUTSIDE / HEAVY RAIN")**~~ - shipped, went with
+   option (a) from the original scoping (cheap density read, not a new
+   authored weather-state system). `sky/weather.js` exports
+   `getNearbySquallCount(radius=14)`, counting how many of the 6 rain
+   squall cells are currently near the player. `ui/hud.js`'s
+   `updateWeatherLabel()` tiers that into LIGHT/RAIN/HEAVY (0 / 1-2 / 3+
+   nearby cells) and only touches the DOM on a tier change. `#weather-
+   label` (`index.html`) sits in the same top-right column as the
+   minimap, stacked above it - `#minimap`'s `top` offset was pushed down
+   34px to make room so the two never overlap. Called once per frame
+   from `animate()`'s gameplay branch, right after `updateRain(dt)`.
+   Note: this stays a fuzzy read of what's rendering, not a designed
+   intensity level - option (b) (a real `state.weather`) was not built.
 
-3. **Compass upgrade (ruler strip + moving red pointer, matching the
-   mockup)** - a compass already exists and already updates live off the
-   player's yaw: `compassStrip` (`main.js`, DOM ref to `#compass-strip`)
-   and `updateCompass()` (`main.js`, called from the main gameplay
-   branch of `animate()`) — currently a single text label ("SW"), not a
-   ruler. **Load-bearing detail easy to miss and drop by accident**:
-   `updateCompass()` has an existing narrative mechanic - at low sanity
-   (`state.sanity <= 0.28`, 40% of frames even above that threshold) it
-   deliberately shows a WRONG direction and adds a `.lying` class
-   (Stage 10 sanity effect, comment in the function says so directly).
-   A visual rebuild into a ruler-with-pointer needs to keep computing
-   from the same lied-about index, not just the real yaw, or that
-   mechanic silently disappears. The CSS mockup's ruler look (tick
-   marks, N/NW/E/SE/S labels, a moving red triangle) is new markup/CSS,
-   but the actual heading logic to feed it already exists and must be
-   reused, not rewritten.
+3. ~~**Compass upgrade (ruler strip + moving pointer)**~~ - shipped.
+   `#compass-strip` rebuilt into a real ruler: a masked viewport, a
+   sliding tick track (16 slots/revolution, named directions + minor
+   dots, repeated 3x so the mask never runs dry at its edges), and a
+   fixed center pointer. `updateCompass()` (`main.js`) still computes
+   from the same real/lied heading logic as before - the Stage 10
+   sanity-lie mechanic (`.lying` class, deliberately wrong direction
+   below ~0.28 sanity) is intact and still jumps discretely rather than
+   easing, only the real-heading case now slides continuously instead
+   of snapping between 8 fixed labels.
 
-4. **Objective panel** - the biggest real gap of the five. `data/
-   quests.js`/`systems/quests.js` (`QUESTS`, `getActiveQuests()`) already
-   track objectives as data - confirmed via `export { QUESTS,
-   getActiveQuests };` - but grepped the whole codebase for any on-screen
-   UI surfacing them and found none. Objectives are tracked and
-   presumably drive other game logic already, but the player currently
-   has no way to see what they are. This is a real feature to build:
-   a DOM panel reading `getActiveQuests()`, deciding how it
-   updates (poll each frame? only on quest-state-change?), and matching
-   the mockup's active/upcoming-objective distinction (bold red current
-   line vs dimmer "Find a way inside" secondary line). Start by reading
-   `systems/quests.js` in full to understand the actual shape of a quest
-   object before designing the panel around it.
+4. ~~**Objective panel**~~ - shipped, the biggest real gap of the five.
+   `#objective-panel` (`index.html`) sits in the left column below
+   `#top-bar` (the right column at the same inset was already claimed
+   by `#weather-label`/`#minimap`). `ui/hud.js`'s `updateObjectivePanel()`
+   reads `getActiveQuests(state)` (`systems/quests.js`) once per frame
+   from `animate()`'s gameplay branch, but builds a cheap `id:have:label`
+   signature string and skips all DOM work when nothing's actually
+   changed - objective state only moves on real game events, not per-
+   frame. Mockup's bold-current/dim-secondary read: the first not-yet-
+   complete objective gets `.current` (bright red, bold); once every
+   objective is complete the last one stays marked current rather than
+   the panel going dark. Completed objectives get a strikethrough on top
+   of the dim styling. Panel stays empty/hidden until the radio's
+   picked up - same gating `getActiveQuests()` already did internally,
+   nothing new added on top of it.
 
-5. **Dialogue box glitch-border restyle** - `#wake-dialogue` (just
-   redesigned this same session - see the round above for the
-   `.compact`/`ransom:true` work) is the right element to restyle, not a
-   new one. Mockup adds a scratched/glitched border treatment and a
-   `[ CH 0.3 ]` channel-tag in the corner. Pure CSS/decoration pass on
-   top of what's there now - no logic changes needed, `showLineBox()`'s
-   existing typing/ransom/compact behavior stays as-is underneath.
+5. ~~**Dialogue box glitch-border restyle**~~ - shipped. `#wake-dialogue`
+   got scratched rust-red corner brackets (jittery, asymmetric) and a
+   `[ CH 0.3 ]` channel tag. Pure CSS, `showLineBox()`'s existing typing/
+   ransom/compact behavior untouched.
 
 ---
 

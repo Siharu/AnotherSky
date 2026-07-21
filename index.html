@@ -1334,12 +1334,48 @@
        clear for the minimap regardless of what else ever gets added
        here. */
   }
+  /* ---------- OBJECTIVE PANEL ----------
+     Left column, below #top-bar (the right column at this same 14px
+     inset is already claimed by #weather-label/#minimap). Populated
+     dynamically by ui/hud.js's updateObjectivePanel() from
+     systems/quests.js's getActiveQuests() - empty/hidden until the
+     player has picked up the radio, same gating getActiveQuests()
+     itself already does. Mockup's bold-current/dim-secondary read:
+     the first not-yet-complete objective gets .current (bright,
+     bold), everything else is dim - completed ones additionally get a
+     strikethrough so progress reads as progress, not just as another
+     dim line. */
+  #objective-panel{
+    position:absolute; top:calc(56px + var(--safe-t)); left:calc(14px + var(--safe-l));
+    max-width:250px; font-family:var(--font-mono); pointer-events:none;
+    opacity:0; transition:opacity .6s ease;
+  }
+  #objective-panel.visible{ opacity:1; }
+  .obj-row{
+    display:flex; justify-content:space-between; gap:10px;
+    font-size:.6rem; letter-spacing:.06em; line-height:1.5;
+    color:var(--bone); opacity:.45; white-space:nowrap;
+  }
+  .obj-row .obj-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .obj-row .obj-status{ opacity:.7; flex-shrink:0; }
+  .obj-row.current{ opacity:1; font-weight:600; color:var(--rust); }
+  .obj-row.current .obj-status{ opacity:1; }
+  .obj-row.complete .obj-name{ text-decoration:line-through; }
+  .obj-row.complete{ opacity:.32; }
+
   #frag-counter{
     font-size:.68rem; letter-spacing:.22em; opacity:.7; background:rgba(0,0,0,0.4);
     padding:7px 14px 7px 12px; border:1px solid rgba(201,194,182,0.2); border-left:2px solid var(--rust);
     font-variant-numeric:tabular-nums;
   }
   #icon-buttons{ display:flex; gap:8px; pointer-events:auto; position:relative; order:-1; }
+  /* real-world system clock, same mono-label DNA as #frag-counter (which
+     is dead/unused CSS elsewhere in this file - not reused as a DOM id,
+     just matched in style) so it reads as part of the same HUD family. */
+  #hud-clock{
+    font-family:var(--font-mono); font-size:.68rem; letter-spacing:.22em; opacity:.7;
+    color:var(--bone); font-variant-numeric:tabular-nums;
+  }
   /* the invisible camera-drag #look-zone widens to top:0/100%/62% in
      portrait (below) and, since it comes after #top-bar in the DOM with
      no z-index set anywhere, was rendering above the icon buttons and
@@ -1557,11 +1593,37 @@
   #compass-strip.lying #compass-pointer{ animation:compassLieJitter .4s steps(2) infinite; }
   @keyframes compassLieJitter{ 0%,100%{ transform:translateX(-50%) translateY(0); } 50%{ transform:translateX(-50%) translateY(1px); } }
 
+  /* ---------- WEATHER LABEL ----------
+     Sits above the minimap in the same top-right column, pinned to the
+     same 14px inset so the two stack cleanly instead of overlapping.
+     Two stacked lines ("OUTSIDE" / condition) per the mockup; the
+     minimap's own top offset below is pushed down by this block's
+     reserved height so they never collide regardless of minimap state. */
+  #weather-label{
+    position:absolute; top:calc(14px + var(--safe-t)); right:calc(14px + var(--safe-r));
+    display:flex; flex-direction:column; align-items:flex-end;
+    font-family:var(--font-mono); letter-spacing:.16em; color:var(--bone);
+    opacity:0; transition:opacity .6s ease;
+    pointer-events:none;
+  }
+  #weather-label.visible{ opacity:.85; }
+  #weather-label-loc{
+    font-size:.6rem; opacity:.55;
+  }
+  #weather-label-cond{
+    font-size:.72rem; font-weight:600; margin-top:1px;
+  }
+  #weather-label.tier-light #weather-label-cond{ color:var(--bone); }
+  #weather-label.tier-rain #weather-label-cond{ color:#9fb8c9; }
+  #weather-label.tier-heavy #weather-label-cond{ color:var(--rust); }
+
   /* ---------- MINIMAP ----------
      Hidden until the radio tower is reached. Small radar-style circle,
-     top-right, showing roughly a 30m radius around the player. */
+     top-right, showing roughly a 30m radius around the player. Pushed
+     down from the bare 14px inset to leave room for #weather-label
+     stacked above it in the same column. */
   #minimap{
-    position:absolute; top:calc(14px + var(--safe-t)); right:calc(14px + var(--safe-r));
+    position:absolute; top:calc(14px + var(--safe-t) + 34px); right:calc(14px + var(--safe-r));
     width:104px; height:104px; border-radius:50%; pointer-events:auto; cursor:pointer;
     background:rgba(5,4,7,0.55); border:1px solid rgba(201,194,182,0.28);
     opacity:0; transform:scale(.85); transition:opacity .6s ease, transform .6s ease;
@@ -2187,6 +2249,7 @@
 <div id="hud">
   <div id="top-bar">
     <div>
+      <span id="hud-clock"></span>
     </div>
     <div id="icon-buttons">
       <div class="icon-btn locked" id="radio-btn" title="radio">
@@ -2207,6 +2270,8 @@
     </div>
   </div>
   <div id="compass-strip"><div id="compass-track"></div><div id="compass-pointer">▼</div></div>
+  <div id="objective-panel"></div>
+  <div id="weather-label"><span id="weather-label-loc">OUTSIDE</span><span id="weather-label-cond">CLEAR</span></div>
   <div id="minimap"><canvas id="minimap-canvas" width="104" height="104"></canvas></div>
 
   <div id="crosshair"></div>

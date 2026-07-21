@@ -34,7 +34,7 @@ import { pickNextNotebookEntry, NOTEBOOK_NOTHING_NEW } from './data/notebook.js'
 import { answeringMachineLines } from './data/dialogue.js';
 import { relayActivationLine, relayReturnCueLine, doorApproachLine, doorOpenPlayerLine, doorOpenRadioLine } from './data/dialogue.js';
 import { startGlitchScramble, stopGlitchScramble } from './ui/credits.js';
-import { flashAutosaveIndicator, minimapCanvas, minimapCtx, radioBtn, radioTicker, updateMinimap } from './ui/hud.js';
+import { flashAutosaveIndicator, minimapCanvas, minimapCtx, radioBtn, radioTicker, updateMinimap, updateWeatherLabel, updateObjectivePanel } from './ui/hud.js';
 import { bigmapCanvas, bigmapCtx, BIG_MAP_WORLD, worldToBig, updateFowAt, drawBigMap } from './ui/bigmap.js';
 import { showWhisper, updateWhisper, updateWhisperCooldown, pickAmbientWhisper, pickWhisperOnCollect } from './ui/whisper.js';
 import {
@@ -2820,6 +2820,7 @@ function animate(){
     updateGhuul(dt, playStinger);
     updateOrbs(dt);
     updateRain(dt);
+    updateWeatherLabel();
     updateDust(dt);
     updateLamps(dt);
     updateDread(dt);
@@ -2829,6 +2830,7 @@ function animate(){
     updateRadio(dt);
     evaluateDirector(dt, triggerLightning);
     tickAutosave(dt);
+    updateObjectivePanel();
   } else {
     updateSky(dt*0.3);
     updateDust(dt);
