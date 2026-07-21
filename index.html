@@ -561,6 +561,12 @@
     opacity:0; pointer-events:none; transition:opacity .25s ease;
     padding:24px;
   }
+  /* Credits specifically needs a fully opaque backdrop: the shared
+     0.94-alpha above lets the hub's huge hero title + nav bleed through
+     at ~6%, and since the crawl sits on top for 60+s that ghosting stacks
+     up and reads as unreadable noise behind the role names. Settings
+     keeps the translucent version untouched. */
+  #credits-overlay{ background:#040305; }
   /* Settings grew a lot taller (Visual/Audio/Gameplay sections) - tall
      enough that on an ordinary 100%-zoom viewport the panel itself was
      overflowing the screen top-to-bottom. Fix lives on .panel-terminal
