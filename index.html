@@ -1490,6 +1490,13 @@
   }
   #lightning-flash{
     position:fixed; inset:0; z-index:17; pointer-events:none; background:#dcd6ff; opacity:0;
+    /* screen blend lightens what's already on screen (brightens the fog/
+       silhouettes, keeps darks reading as darks) instead of laying a
+       flat, unblended rectangle of pale color straight over everything
+       at up to 95% opacity - that flat-paint version is what was
+       actually reading as a blinding full-white flash, not the fact
+       that it was a flash at all. */
+    mix-blend-mode:screen;
   }
   #ending-screen{
     position:fixed; inset:0; z-index:70; background:#000; color:var(--bone); display:none;

@@ -288,15 +288,33 @@ initGrass();
 const lightningEl = document.getElementById('lightning-flash');
 let lightningTimer = 6;
 function triggerLightning(){
-  const strength = 0.55 + Math.random()*0.4;
+  // Was strength 0.55-0.95 on a flat, non-blended white layer - that
+  // combination is what actually hurt to look at (see the CSS comment on
+  // #lightning-flash). With mix-blend-mode:screen now doing the actual
+  // "brighten the scene" work, opacity this high isn't needed for the
+  // flash to read - it was just adding raw brightness on top of a color
+  // that was already fully opaque paint. Real lightning also isn't one
+  // held pulse, it's a bright hit, a near-total drop, then a dimmer
+  // second flicker - the single quick second pulse below is standing in
+  // for that without adding a second full-strength hit to the eyes.
+  const strength = 0.16 + Math.random()*0.18;
   lightningEl.style.transition = 'none';
   lightningEl.style.opacity = strength;
   requestAnimationFrame(()=>{
-    lightningEl.style.transition = 'opacity 0.35s ease';
+    lightningEl.style.transition = 'opacity 0.12s ease';
     lightningEl.style.opacity = 0;
   });
+  setTimeout(()=>{
+    const flicker = strength * (0.35 + Math.random()*0.25);
+    lightningEl.style.transition = 'none';
+    lightningEl.style.opacity = flicker;
+    requestAnimationFrame(()=>{
+      lightningEl.style.transition = 'opacity 0.3s ease';
+      lightningEl.style.opacity = 0;
+    });
+  }, 90 + Math.random()*40);
   const oldAmb = ambient.intensity, oldHemi = skyLight.intensity;
-  ambient.intensity = 2.4; skyLight.intensity = 2.0;
+  ambient.intensity = 1.7; skyLight.intensity = 1.5;
   setTimeout(()=>{ ambient.intensity = oldAmb; skyLight.intensity = oldHemi; }, 350); // was 140ms vs the screen flash's 350ms fade - light snapped back while the screen still visibly read as flashed
   playThunder();
 }
@@ -1873,7 +1891,7 @@ function tryInteract(){
   // the same fractured dialogue voice the wake-up sequence uses, a beat
   // after the whisper so they don't collide
   const l = LORE[orbData.id];
-  if(l) setTimeout(()=> showLineBox(`${l.title} — ${l.text}`, { hold: 4200, compact: true }), 1200);
+  if(l) setTimeout(()=> showLineBox(`${l.title} — ${l.text}`, { hold: 4200, compact: true, ransom: true }), 1200);
   interactBtn.classList.remove('active');
   interactPrompt.classList.remove('show');
   state.nearOrbId=-1;
@@ -2031,7 +2049,7 @@ function manualSave(){
   const entry = pickNextNotebookEntry(state);
   if(entry){
     state.notebookEntriesShown.push(entry.id);
-    showLineBox(entry.text, { hold: 4400, compact: true });
+    showLineBox(entry.text, { hold: 4400, compact: true, ransom: true });
   } else {
     showLineBox(NOTEBOOK_NOTHING_NEW, { hold: 2000, compact: true });
   }
