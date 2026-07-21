@@ -1607,6 +1607,26 @@
   }
   #wake-dialogue.visible{ opacity:1; }
   #wake-dialogue.glitch-burst{ filter:url(#chromaGlitch); animation:dialogueShake .22s linear; }
+  /* Lore-pickup text reuses this box (see main.js showLineBox()/orb
+     collection) but a full lore entry ("Title — body sentence") runs
+     much longer than the one-line wake-up thoughts this box was sized
+     for - at the original clamp(1rem,4.4vw,1.3rem) that's 5-6 lines of
+     large text on a phone, easily half the screen, right on top of the
+     HUD/minimap/interact prompt the player still needs during active
+     exploration (unlike the wake-up intro, which owns a captive moment).
+     Smaller text + a hard max-height + its own scrollbar (matching the
+     settings panel's themed one) keeps a long entry from ever growing
+     past a small band near the bottom, however long the lore text is. */
+  #wake-dialogue.compact{ bottom:9vh; max-width:78vw; padding:10px 16px; }
+  #wake-dialogue.compact #wake-dialogue-text{
+    font-size:clamp(.78rem,3vw,.92rem); line-height:1.45;
+    max-height:22vh; overflow-y:auto;
+    scrollbar-width:thin; scrollbar-color:rgba(122,31,31,0.55) rgba(0,0,0,0.3);
+  }
+  #wake-dialogue.compact #wake-dialogue-text::-webkit-scrollbar{ width:6px; }
+  #wake-dialogue.compact #wake-dialogue-text::-webkit-scrollbar-thumb{
+    background:linear-gradient(180deg, #8a1414, #5c0d0d); border:1px solid rgba(201,194,182,0.2);
+  }
   @keyframes dialogueShake{
     0%{ transform:translateX(-50%) translate(0,0); }
     25%{ transform:translateX(-50%) translate(-3px,1px); }

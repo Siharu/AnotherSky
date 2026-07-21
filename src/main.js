@@ -1225,7 +1225,7 @@ let spireBeacon;
    since waking up. */
 export const RADIO_TOWER_POS = { x:0, z:0 };
 const RADIO_TOWER_UNLOCK_RADIUS = 16;
-let radioTowerBeaconMesh, radioTowerHeight;
+let radioTowerBeaconMesh, radioTowerHeight, radioTowerBeaconLight, radioTowerPulseRings;
 {
   const tx = RADIO_TOWER_POS.x, tz = RADIO_TOWER_POS.z;
   const ty = groundHeightAt(tx, tz);
@@ -1278,9 +1278,33 @@ let radioTowerBeaconMesh, radioTowerHeight;
   const beaconLight = new THREE.PointLight(0xff3b3b, 2.4, 46, 2);
   beaconLight.position.y = radioTowerHeight + 10.2;
   group.add(beaconLight);
+  radioTowerBeaconLight = beaconLight;
   const towerGlow = addGlow(group, 0xff3b3b, 5, 0.7);
   towerGlow.position.y = radioTowerHeight + 10.2;
   radioTowerBeaconMesh.userData.glow = towerGlow;
+
+  // Radio pulse rings: a small pool of thin rings sitting at the beacon,
+  // reused rather than spawned/destroyed per pulse (spawning per-pulse
+  // would mean allocating+disposing geometry every couple seconds for as
+  // long as the title screen sits idle - pointless GC churn for something
+  // this cheap to just loop). Flat on the horizontal plane so they read
+  // as an expanding "ping" from the tower regardless of which way the
+  // idle camera happens to be facing, rather than a billboard that only
+  // works face-on. Only actually driven by updateTitlePulseRings() during
+  // the idle title screen (see animate()) - otherwise sit at opacity 0,
+  // which costs nothing.
+  const ringGeo = new THREE.RingGeometry(0.94, 1, 40);
+  const pulseRingMat0 = new THREE.MeshBasicMaterial({ color:0xff3b3b, transparent:true, opacity:0, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false });
+  radioTowerPulseRings = [];
+  const RING_POOL_COUNT = 3;
+  for(let i=0;i<RING_POOL_COUNT;i++){
+    const ring = new THREE.Mesh(ringGeo, pulseRingMat0.clone());
+    ring.rotation.x = -Math.PI/2;
+    ring.position.y = radioTowerHeight + 10.2;
+    ring.visible = false;
+    group.add(ring);
+    radioTowerPulseRings.push(ring);
+  }
 
   group.position.set(tx, ty, tz);
   scene.add(group);
@@ -1290,6 +1314,40 @@ function updateRadioTowerBeacon(){
   const pulse = 0.55 + Math.sin(performance.now()*0.0022)*0.45;
   radioTowerBeaconMesh.material.opacity = 0.5 + pulse*0.5;
   if(radioTowerBeaconMesh.userData.glow) radioTowerBeaconMesh.userData.glow.material.opacity = 0.35 + pulse*0.4;
+  // Breathing light: the beacon's actual PointLight, separate from the
+  // small glow sprite/mesh above - this is what bleeds red into the fog
+  // and dome around the tower, not just brightens a sphere. Same pulse
+  // phase as the mesh/glow so they read as one light source, not two
+  // fighting rhythms.
+  if(radioTowerBeaconLight) radioTowerBeaconLight.intensity = 1.7 + pulse*2.1;
+}
+// Idle-title-screen only (see animate()'s `else` branch, gated on
+// state.titleScreenActive same as updateTitleCam) - expands each ring
+// pooled above from a point at the beacon out to a faint faded halo, one
+// ring firing every ~2.6s, staggered so there's always one mid-expansion.
+// Explicitly zeroes everything out and returns once titleScreenActive
+// goes false, rather than just not being called anymore, so a ring that
+// was mid-fade when the player hit "Remember" doesn't hang there frozen
+// at whatever opacity/scale it last had.
+let titlePulseClock = 0;
+const PULSE_PERIOD = 2.6, PULSE_MAX_R = 22, PULSE_RING_COUNT = 3;
+function updateTitlePulseRings(dt, active){
+  if(!radioTowerPulseRings) return;
+  if(!active){
+    if(titlePulseClock !== 0){
+      titlePulseClock = 0;
+      radioTowerPulseRings.forEach(r=>{ r.visible = false; r.material.opacity = 0; });
+    }
+    return;
+  }
+  titlePulseClock += dt;
+  radioTowerPulseRings.forEach((ring, i)=>{
+    const phase = ((titlePulseClock/PULSE_PERIOD) + i/PULSE_RING_COUNT) % 1;
+    const r = 0.6 + phase*PULSE_MAX_R;
+    ring.visible = true;
+    ring.scale.setScalar(r);
+    ring.material.opacity = (1-phase) * 0.4;
+  });
 }
 export function updateRadioTower(dt){
   updateRadioTowerBeacon();
@@ -1815,7 +1873,7 @@ function tryInteract(){
   // the same fractured dialogue voice the wake-up sequence uses, a beat
   // after the whisper so they don't collide
   const l = LORE[orbData.id];
-  if(l) setTimeout(()=> showLineBox(`${l.title} — ${l.text}`, { hold: 4200 }), 1200);
+  if(l) setTimeout(()=> showLineBox(`${l.title} — ${l.text}`, { hold: 4200, compact: true }), 1200);
   interactBtn.classList.remove('active');
   interactPrompt.classList.remove('show');
   state.nearOrbId=-1;
@@ -1973,9 +2031,9 @@ function manualSave(){
   const entry = pickNextNotebookEntry(state);
   if(entry){
     state.notebookEntriesShown.push(entry.id);
-    showLineBox(entry.text, { hold: 4400 });
+    showLineBox(entry.text, { hold: 4400, compact: true });
   } else {
-    showLineBox(NOTEBOOK_NOTHING_NEW, { hold: 2000 });
+    showLineBox(NOTEBOOK_NOTHING_NEW, { hold: 2000, compact: true });
   }
 }
 // restores saved progress directly into a running scene - skips the
@@ -2560,6 +2618,7 @@ async function showLineBox(text, opts){
   const textEl = $('wake-dialogue-text');
   if(!box || !textEl) return false;
   dialogueBoxBusy = true;
+  box.classList.toggle('compact', !!opts.compact);
   box.classList.add('visible');
   await typeLine(textEl, text, { delay: opts.delay });
   if(opts.ransom) ransomize(textEl);
@@ -2570,6 +2629,7 @@ async function showLineBox(text, opts){
   await sleep(160);
   box.classList.remove('glitch-burst');
   box.classList.remove('visible');
+  box.classList.remove('compact');
   textEl.textContent = '';
   dialogueBoxBusy = false;
   return true;
@@ -2741,13 +2801,30 @@ let titleCamYaw = Math.PI * 0.15;
 // somewhere the player never pointed it.
 // state.titleScreenActive lives in core/state.js (moved off a bare `let`
 // export in ui/titleScreen.js - see the comment there for why).
+//
+// Previously this orbited tight (radius 2.2) right at the tower's own
+// base, which is why the title screen read as flat black in practice -
+// standing under a 58-unit lattice tower looking mostly straight up
+// doesn't show its silhouette, it shows dark steel filling the frame.
+// Pulled back to a real establishing distance and swapped the continuous
+// 360 spin for a slow, bounded arc-sway (so the tower/beacon never spins
+// out of frame for half the loop) plus a small sine/cosine bob standing
+// in for "camera motion" - a completely still orbit reads as a stock
+// photo, a handheld sway reads as someone actually standing there.
 function updateTitleCam(dt){
-  titleCamYaw += dt*0.025;
-  const orbitR = 2.2;
-  const cx = Math.sin(titleCamYaw*0.3)*orbitR, cz = Math.cos(titleCamYaw*0.3)*orbitR;
+  titleCamYaw += dt*0.05;
+  const bearing = Math.PI*0.15 + Math.sin(titleCamYaw*0.18)*0.5; // bounded sway, not a full orbit
+  const orbitR = 32;
+  const cx = Math.sin(bearing)*orbitR, cz = Math.cos(bearing)*orbitR;
   const y = terrainHeight(cx, cz);
-  camera.position.set(cx, y + EYE_HEIGHT + 1.1, cz);
-  camera.rotation.set(-0.07, titleCamYaw, 0);
+  const bob = Math.sin(titleCamYaw*0.9)*0.05 + Math.cos(titleCamYaw*0.55)*0.035;
+  camera.position.set(cx, y + EYE_HEIGHT + 1.1 + bob, cz);
+  const lookTarget = new THREE.Vector3(
+    RADIO_TOWER_POS.x + Math.sin(titleCamYaw*0.7)*0.4,
+    (radioTowerHeight||58)*0.5,
+    RADIO_TOWER_POS.z
+  );
+  camera.lookAt(lookTarget);
 }
 
 function animate(){
@@ -2798,7 +2875,11 @@ function animate(){
     updateDust(dt);
     updateRain(dt);
     updateLamps(dt);
-    if(state.titleScreenActive) updateTitleCam(dt);
+    if(state.titleScreenActive){
+      updateTitleCam(dt);
+      updateRadioTowerBeacon();
+    }
+    updateTitlePulseRings(dt, state.titleScreenActive);
     tickMenuIdle();
   }
 
