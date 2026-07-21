@@ -2893,6 +2893,7 @@ function animate(){
     updateDust(dt);
     updateRain(dt);
     updateLamps(dt);
+    updateWorldStream();
     if(state.titleScreenActive){
       updateTitleCam(dt);
       updateRadioTowerBeacon();
