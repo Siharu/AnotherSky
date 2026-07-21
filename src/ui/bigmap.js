@@ -1,4 +1,10 @@
 // ---------- BIG MAP ----------
+import { state } from '../core/state.js';
+import {
+  downtownStreetRibbons, activeMinimapBuildings,
+  exitRoadDirX, exitRoadDirZ, EXIT_ROAD_START, EXIT_ROAD_END, EXIT_ROAD_HALFWIDTH
+} from '../world/worldData.js';
+import { ghuulList } from '../entities/ghuuls.js';
 // Scoped down the same way as ui/hud.js's minimap piece was until this
 // round: drawBigMap()'s two blockers (ghuulList, DOM refs) are both
 // cleared now (entities/ghuuls.js exists; canvas refs are right here),
