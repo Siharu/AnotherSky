@@ -1,4 +1,4 @@
-# Another Sky — Handoff Notes (updated — HUD button/minimap overlap fixed, chunk-streaming stutter root-caused and fixed)
+# Another Sky — Handoff Notes (updated — idle title screen actually renders now (real world-streaming gap, not a lighting/camera issue), title-scene logic moved out of main.js into ui/titleScreen.js, bigmap.js missing-import crash fixed, settings panel redesigned, thunder flash de-blinded)
 
 ## Development
 
@@ -84,7 +84,251 @@ above, but same theme):**
 
 ---
 
-## This round: HUD button/minimap overlap fix, plus the real cause of "random stutter regardless of resolution"
+## Still open: HUD proposal (system clock, weather label, compass upgrade, objective panel, dialogue box restyle)
+
+Not built this round - the person shared a mockup (in-fiction terminal
+HUD: ruler-style compass with a moving pointer, real-world clock,
+"OUTSIDE / HEAVY RAIN" weather label, an objective checklist panel, and
+a glitch-bordered dialogue box with a channel tag) and asked for this to
+be scoped for whoever picks it up next, not implemented immediately -
+five different-sized asks bundled into one screenshot, worth splitting
+rather than building blind. Per-item reality check below; some of this
+is a restyle, some is a real feature with nothing behind it yet.
+
+1. **System clock** - genuinely trivial, nothing exists yet. Real-world
+   time, not in-game time - `new Date().toLocaleTimeString()` (or format
+   by hand for the `03:17 AM` look specifically), a `setInterval`
+   ticking once a minute is plenty. No design decisions here beyond
+   picking a DOM spot and matching the mono HUD font already used
+   elsewhere (`ui/hud.js`'s existing labels).
+
+2. **Weather label ("OUTSIDE / HEAVY RAIN")** - also nothing exists yet,
+   but *less trivial than it looks*: checked `sky/weather.js` directly -
+   there is no discrete weather-state variable to read from. Rain runs
+   as an always-on ambient particle system (`RAIN_COUNT`/`updateRain()`,
+   squall "cells" drifting through unpredictably), not a toggled
+   "raining: true/false" or an intensity level stored anywhere. Two real
+   options, not just one hookup: (a) derive an approximate label from
+   how many squall cells are currently active/dense near the player
+   (cheap, stays true to what's actually rendering, but "HEAVY RAIN" vs
+   "LIGHT RAIN" would be a fuzzy read of particle density rather than an
+   authored state), or (b) introduce an actual small weather-state
+   concept (`state.weather` or similar, a handful of named levels) that
+   both the rain system and this label read from - more work, but an
+   honest single source of truth instead of two systems each guessing at
+   the same thing. Worth deciding which before starting, not mid-build.
+
+3. **Compass upgrade (ruler strip + moving red pointer, matching the
+   mockup)** - a compass already exists and already updates live off the
+   player's yaw: `compassStrip` (`main.js`, DOM ref to `#compass-strip`)
+   and `updateCompass()` (`main.js`, called from the main gameplay
+   branch of `animate()`) — currently a single text label ("SW"), not a
+   ruler. **Load-bearing detail easy to miss and drop by accident**:
+   `updateCompass()` has an existing narrative mechanic - at low sanity
+   (`state.sanity <= 0.28`, 40% of frames even above that threshold) it
+   deliberately shows a WRONG direction and adds a `.lying` class
+   (Stage 10 sanity effect, comment in the function says so directly).
+   A visual rebuild into a ruler-with-pointer needs to keep computing
+   from the same lied-about index, not just the real yaw, or that
+   mechanic silently disappears. The CSS mockup's ruler look (tick
+   marks, N/NW/E/SE/S labels, a moving red triangle) is new markup/CSS,
+   but the actual heading logic to feed it already exists and must be
+   reused, not rewritten.
+
+4. **Objective panel** - the biggest real gap of the five. `data/
+   quests.js`/`systems/quests.js` (`QUESTS`, `getActiveQuests()`) already
+   track objectives as data - confirmed via `export { QUESTS,
+   getActiveQuests };` - but grepped the whole codebase for any on-screen
+   UI surfacing them and found none. Objectives are tracked and
+   presumably drive other game logic already, but the player currently
+   has no way to see what they are. This is a real feature to build:
+   a DOM panel reading `getActiveQuests()`, deciding how it
+   updates (poll each frame? only on quest-state-change?), and matching
+   the mockup's active/upcoming-objective distinction (bold red current
+   line vs dimmer "Find a way inside" secondary line). Start by reading
+   `systems/quests.js` in full to understand the actual shape of a quest
+   object before designing the panel around it.
+
+5. **Dialogue box glitch-border restyle** - `#wake-dialogue` (just
+   redesigned this same session - see the round above for the
+   `.compact`/`ransom:true` work) is the right element to restyle, not a
+   new one. Mockup adds a scratched/glitched border treatment and a
+   `[ CH 0.3 ]` channel-tag in the corner. Pure CSS/decoration pass on
+   top of what's there now - no logic changes needed, `showLineBox()`'s
+   existing typing/ransom/compact behavior stays as-is underneath.
+
+---
+
+
+
+Several separate requests handled in one session; grouped here by theme
+rather than chronologically.
+
+### The idle title screen was rendering flat black - root cause found
+
+Not a lighting, camera, or shader problem, despite looking like one.
+`updateWorldStream()` (`world/streaming.js` - loads/generates terrain
+chunks around the player) was only ever called from inside
+`entities/player.js`'s per-frame update, which itself only runs when
+`state.started` is true. So before the player ever taps "Remember,"
+**nothing streams in beyond the small hand-authored downtown block** -
+there was almost no world built yet for an idle title-screen camera to
+look at, regardless of where it pointed or how it was lit. This is why
+gameplay always looked fine (streaming kicks in once you start) but the
+title screen was black no matter what. Fixed by calling
+`updateWorldStream()` every frame during the idle branch too, not just
+during gameplay.
+
+Found via elimination, not inspection: the person confirmed gameplay
+itself rendered fine (if stuttery, on integrated graphics) while the
+title screen stayed black across multiple rounds of camera/lighting
+fixes that individually checked out correct but made no visible
+difference - that split (gameplay fine, title black) is what narrowed it
+down to "something gated behind `state.started` that shouldn't be,"
+same failure shape as the radio-tower-beacon-never-pulses-pre-start bug
+found earlier the same session (see below).
+
+### Title-scene logic moved out of main.js into ui/titleScreen.js
+
+Real architectural correction, called out directly by the project owner:
+the idle title-screen camera framing, radio pulse rings, and the
+world-streaming call above had all been added inline to `main.js`'s
+`animate()` loop, on the reasoning that `main.js` owns the only
+scene/camera/renderer in the project. True, but beside the point - the
+file whose entire job is "what does the title screen look like and do"
+is `ui/titleScreen.js`, and it was never actually blocked from doing
+this work. Checked before moving anything: `core/scene.js` (which
+exports `scene`/`camera`) has zero dependency on `main.js` - importing
+it directly into `titleScreen.js` is safe and doesn't recreate the
+circular-import bug HOTFIX #5 (further down this doc) deliberately
+removed. That fix was specifically about `titleScreen.js` never
+statically importing *from* `main.js` again; importing from `core/
+scene.js` was never the problem.
+
+Moved to `ui/titleScreen.js`:
+- `updateTitleCam(dt)` - idle camera framing/sway/bob
+- `updateTitlePulseRings(dt, active)` - the beacon's expanding ping rings
+- `updateTitleScene(dt)` - new single entry point, calls the above plus
+  `updateWorldStream()`; this is now the only thing `main.js`'s
+  `animate()` calls in its idle branch, replacing three separate inline
+  calls
+
+Stayed in `main.js` (genuine scene-construction scope, not title-screen
+presentation): the radio tower's actual mesh/light/ring pool
+construction, and `updateRadioTowerBeacon()` (the breathing-light pulse
+math tied to that construction). `titleScreen.js` reaches these through
+`registerMainRefs()` - extended with `RADIO_TOWER_POS`,
+`radioTowerHeight`, `getRadioTowerBeaconLight()`,
+`getRadioTowerPulseRings()`, `updateRadioTowerBeacon` - same
+dependency-injection pattern already used for the radio pickup mesh, for
+the same reason (avoids a static import back toward `main.js`).
+
+### Radio tower beacon didn't pulse (or exist visually as "alive") before the player began
+
+Same root-cause shape as the streaming gap above, found first and what
+led to finding it: `updateRadioTowerBeacon()` (breathing red light +
+pulsing glow mesh) was only called from inside `updateRadioTower(dt)`,
+itself only called from `updatePlayer(dt)` - gated behind
+`state.started`. The beacon existed as a static mesh pre-start but never
+animated. Now also called directly during the idle branch (via
+`updateTitleScene()`), gated on `state.titleScreenActive` specifically
+rather than `state.started` more broadly, since `state.started` is also
+false while the bigmap is open or after the ending fires - neither of
+those should re-trigger idle-title behavior.
+
+Also reworked the idle camera itself while investigating: it used to
+orbit tight (radius 2.2) right at the tower's own base - standing under
+a 58-unit lattice tower looking mostly straight up shows dark steel
+filling the frame, not a silhouette, which was *also* contributing to
+the black-screen read even before the streaming gap was found. Pulled
+back to a real establishing distance (32 units) with a slow bounded
+arc-sway (not a full 360 spin, so the tower/beacon can't swing out of
+frame for half the loop) plus a small sine/cosine bob for a handheld
+feel. Added a small pooled (not spawn/destroy per-pulse) set of
+expanding ring meshes at the beacon for a literal "radio pulse"
+read.
+
+### bigmap.js: real crash, `state` (and others) never imported
+
+`Uncaught ReferenceError: state is not defined [bigmap.js:93]`, reported
+directly. `bigmap.js` uses `state.playerX`/`state.playerZ` throughout
+(`worldToBig()`, `drawBigMap()`) but never had an import statement for
+`state` at all - a plain miss, not a refactor casualty (confirmed by
+diffing against the person's live copy, which matched exactly, ruling
+out file drift as the cause). While fixing, found and fixed the same
+class of bug for four more names `drawBigMap()` uses but never imports:
+`downtownStreetRibbons`, `activeMinimapBuildings`, the `exitRoad*`/
+`EXIT_ROAD_*` constants (all from `world/worldData.js`), and `ghuulList`
+(from `entities/ghuuls.js`). These hadn't been hit yet only because
+`state` failed first, on every single draw call.
+
+### Settings panel redesign
+
+Restructured into sectioned **Visual / Audio / Gameplay** groups (red
+section headers/dividers), added a terminal-style header (tag line +
+"DRIFTER TERMINAL v2.1 / USER: LOGBOOK DRIFTER"), segmented tick-mark
+sliders (repeating-gradient overlay on the existing fill, reads more
+analog), a themed **Screen Mode** dropdown (replaces the old standalone
+"Enter Fullscreen" button - same real `requestFullscreen()`/
+`exitFullscreen()` underneath, now also stays in sync if the player
+exits fullscreen via Esc instead of the dropdown), and **Music
+Volume**/**SFX Volume** sliders. Flagged honestly rather than faked:
+the audio graph (`systems/audio.js`) is still a single bus - every
+source connects straight to `masterGain` - so Music/SFX volume are real
+persisted settings with working UI but don't yet independently
+attenuate anything; only Master Volume actually reaches the audio graph.
+Splitting the bus is future work if wanted.
+
+Two real bugs found and fixed along the way, not just polish:
+- `.panel-row label`/`.toggle-row label` never had a `color` set, and
+  neither did `html,body` as a fallback - every setting name was
+  rendering in the browser's default black-on-black, invisible. Title/
+  buttons survived because those had explicit `color` rules; labels
+  didn't.
+- The panel grew tall enough (three sections) that on an ordinary
+  100%-zoom viewport it overflowed the screen. Fixed with the same
+  "cap the box, scroll inside it" pattern `#hub-doc` already used
+  (`max-height:92vh` + its own `overflow-y:auto` on `.panel-terminal`)
+  rather than trying to make the whole page scroll around a centered
+  flex child (that path has its own well-known trap: content that
+  overflows *above* a centered point becomes unscrollable-to).
+  Themed scrollbar added to match (rust gradient thumb, tick-marked
+  track, slow flicker) instead of leaving the browser's default white
+  one.
+
+### Lore-pickup/notebook dialogue box was covering the whole screen
+
+Both reuse the shared `#wake-dialogue` box (built for the wake-up
+intro's short single-line thoughts). A full lore entry
+(`"Title — full sentence"`) is much longer, so at the wake-up box's
+original size it grew to 5-6 lines covering roughly half the screen,
+right over the HUD/minimap/interact prompt, during active exploration
+(unlike the wake-up intro, which owns a captive moment and is fine being
+large). Added a `.compact` modifier - smaller font, hard-capped
+`max-height:22vh` with its own scrollable overflow - applied only to
+lore-pickup and notebook `showLineBox()` calls via a new `compact:true`
+option; the wake-up intro and short player-voice lines are untouched.
+Also added the `ransom:true` ransom-note font treatment to both of those
+same calls (they'd never actually had it, even pre-refactor) - a
+corrupted memory surfacing fits the effect's purpose better than
+anything else in the game currently uses it for.
+
+### Thunder flash was reading as a blinding full-white screen, not lightning
+
+Real cause: `#lightning-flash` was a flat, non-blended `#dcd6ff`
+rectangle painted straight over the whole screen at up to **95%
+opacity** (`strength = 0.55 + Math.random()*0.4`), with no blend mode -
+a solid wall of near-white paint, not "the scene lighting up." Fixed
+two ways: added `mix-blend-mode:screen` so the flash brightens whatever
+the scene actually has on screen instead of replacing it with flat
+color, and dropped peak opacity to `0.16-0.34` with the single held
+pulse replaced by a quick bright hit plus a dimmer secondary flicker
+(closer to how real lightning reads - strike, near-total drop, faint
+second flash - than one long blast).
+
+---
+
+
 
 Two unrelated fixes requested together.
 
