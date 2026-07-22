@@ -1373,9 +1373,15 @@
      is dead/unused CSS elsewhere in this file - not reused as a DOM id,
      just matched in style) so it reads as part of the same HUD family. */
   #hud-clock{
-    font-family:var(--font-mono); font-size:.68rem; letter-spacing:.22em; opacity:.7;
+    font-family:var(--font-mono); font-size:.68rem; letter-spacing:.22em; opacity:0;
     color:var(--bone); font-variant-numeric:tabular-nums;
+    transition:opacity .6s ease;
   }
+  /* Hidden (opacity:0, not display:none) until the radio's picked up -
+     see ui/hud.js updateWeatherLabel(), which gates both this and
+     #weather-label on state.radioCollected. Kept in layout rather than
+     removed so top-bar spacing doesn't jump when it fades in. */
+  #hud-clock.visible{ opacity:.7; }
   /* the invisible camera-drag #look-zone widens to top:0/100%/62% in
      portrait (below) and, since it comes after #top-bar in the DOM with
      no z-index set anywhere, was rendering above the icon buttons and
@@ -1695,9 +1701,22 @@
 
   /* ---------- WAKE DIALOGUE ----------
      A corrupted subtitle box that autoplays right after the eyes open -
-     the character's own thoughts arriving broken and mismatched. */
+     the character's own thoughts arriving broken and mismatched.
+
+     Tone pass: the box used to glitch via an SVG filter that split the
+     whole box into R/G/B channels (feColorMatrix per channel + feBlend
+     screen) - full-box chromatic aberration reads as a hacked digital
+     terminal, wrong genre for a game citing 999/Ito/Bloodborne/13
+     Sentinels, none of which are neon-digital. Replaced with two
+     confined, in-palette effects instead: a one-sided rust/amber tear
+     (#wake-dialogue-chroma, clipped to the box's right edge only) and a
+     persistent weak-signal bar graph (#wake-dialogue-signal) - both
+     read as "this is a damaged analog transmission" rather than "this
+     is a corrupted UI". Both sit at a constant low level rather than
+     only appearing during the transient glitch-burst, so the damage is
+     visible in a screenshot and not just for the ~200ms burst window. */
   #wake-dialogue{
-    position:fixed; left:50%; bottom:16vh; transform:translateX(-50%);
+    position:fixed; left:50%; bottom:16vh; bottom:16dvh; transform:translateX(-50%);
     width:min(640px, 82vw); z-index:60;
     padding:14px 22px; background:rgba(6,5,8,0.72);
     border:1px solid rgba(122,31,31,0.4);
@@ -1706,7 +1725,9 @@
     text-align:left;
   }
   #wake-dialogue.visible{ opacity:1; }
-  #wake-dialogue.glitch-burst{ filter:url(#chromaGlitch); animation:dialogueShake .22s linear; }
+  /* No more url()/SVG filter here - just a brightness/position shudder,
+     same shape as .compact's own dialogueShake keyframes below. */
+  #wake-dialogue.glitch-burst{ animation:dialogueShake .22s linear; }
   /* Scratched/glitch corner brackets - same corner-accent language
      #title-frame already uses, but rust-red and slightly jittered so the
      box itself reads as damaged rather than clean UI chrome. Two corners
@@ -1747,6 +1768,65 @@
     color:rgba(122,31,31,0.85); background:#0c0708;
     padding:1px 6px; border:1px solid rgba(122,31,31,0.5);
   }
+  /* One-sided chromatic tear - confined to the box's right ~35% via
+     clip-path rather than filtering the whole element. Ghosts whatever
+     text is currently on screen (see typeLine() in main.js, which keeps
+     these two spans in sync while typing) in rust/amber only - no cyan/
+     magenta - so it reads as heat-damaged tube bleed on one edge, not a
+     hologram split. Sits at a faint constant opacity and spikes wider/
+     brighter during .glitch-burst. */
+  #wake-dialogue-chroma{
+    position:absolute; inset:0; z-index:2; pointer-events:none;
+    clip-path: polygon(65% 0, 100% 0, 100% 100%, 65% 100%);
+    opacity:.32; mix-blend-mode:screen; transition:opacity .15s ease;
+  }
+  #wake-dialogue-chroma span{
+    position:absolute; inset:0; font-family:var(--font-mono);
+    font-size:clamp(1rem,4.4vw,1.3rem); line-height:1.5; white-space:pre-wrap;
+    color:transparent;
+  }
+  #wake-dialogue.glitch-burst #wake-dialogue-chroma{
+    opacity:.9; animation:chromaTear .22s steps(2,end);
+  }
+  #wake-dialogue-chroma .ch-r{ color:#a83a2a; transform:translate(-3px,0); }
+  #wake-dialogue-chroma .ch-a{ color:#c98f4a; transform:translate(3px,1px); }
+  @keyframes chromaTear{
+    0%{ clip-path: polygon(65% 0, 100% 0, 100% 100%, 65% 100%); }
+    50%{ clip-path: polygon(55% 0, 100% 0, 100% 100%, 72% 100%); }
+    100%{ clip-path: polygon(65% 0, 100% 0, 100% 100%, 65% 100%); }
+  }
+  /* Broken-signal indicator, bottom-left of the box (kept off the top
+     edge on purpose - a tag positioned a few px outside the box's top
+     border is the thing most likely to clip against a scrolled mobile
+     viewport, same issue #wake-dialogue-channel doesn't hit up top
+     because it sits further from that edge). Reads as the actual
+     receiving equipment, not a decorative HUD chip - plain bars, no
+     border-chip styling beyond the shared tag look. Bar 1 is dead by
+     default (the signal is just weak, always); main.js's glitch-burst
+     handling knocks one more out at random and restores to this same
+     weak baseline afterward, never full health. */
+  #wake-dialogue-signal{
+    position:absolute; bottom:-9px; left:16px; z-index:1;
+    display:flex; align-items:flex-end; gap:2px; height:8px;
+    background:#0c0708; padding:1px 6px; border:1px solid rgba(122,31,31,0.5);
+  }
+  #wake-dialogue-signal i{ display:block; width:3px; background:var(--bone); opacity:.75; }
+  #wake-dialogue-signal i:nth-child(1){ height:3px; }
+  #wake-dialogue-signal i:nth-child(2){ height:5px; }
+  #wake-dialogue-signal i:nth-child(3){ height:6px; }
+  #wake-dialogue-signal i:nth-child(4){ height:8px; }
+  #wake-dialogue-signal i.dead{ opacity:.15; background:#7a1f1f; }
+  /* Narrow/mobile: shrink padding + pull tag offsets in so the channel
+     tag and signal indicator - both positioned a few px outside the box
+     edge - stay inside the visible frame rather than clipping against
+     whatever the mobile browser's actual visible viewport turns out to
+     be (address-bar chrome eats into plain vh, which is why the dvh
+     fallback above exists too). */
+  @media (max-width:480px){
+    #wake-dialogue{ padding:12px 16px; }
+    #wake-dialogue-channel{ top:-8px; right:12px; font-size:.52rem; padding:1px 5px; }
+    #wake-dialogue-signal{ bottom:-8px; left:12px; }
+  }
   /* Lore-pickup text reuses this box (see main.js showLineBox()/orb
      collection) but a full lore entry ("Title — body sentence") runs
      much longer than the one-line wake-up thoughts this box was sized
@@ -1757,7 +1837,7 @@
      Smaller text + a hard max-height + its own scrollbar (matching the
      settings panel's themed one) keeps a long entry from ever growing
      past a small band near the bottom, however long the lore text is. */
-  #wake-dialogue.compact{ bottom:9vh; width:min(560px, 78vw); padding:10px 16px; }
+  #wake-dialogue.compact{ bottom:9vh; bottom:9dvh; width:min(560px, 78vw); padding:10px 16px; }
   #wake-dialogue.compact #wake-dialogue-text{
     font-size:clamp(.78rem,3vw,.92rem); line-height:1.45;
     max-height:22vh; overflow-y:auto;
@@ -1777,6 +1857,7 @@
   #wake-dialogue-text{
     font-family:var(--font-mono); font-size:clamp(1rem,4.4vw,1.3rem);
     letter-spacing:.02em; color:var(--bone); min-height:1.5em; line-height:1.5;
+    position:relative; z-index:3;
   }
   #wake-dialogue-cursor{ display:inline-block; width:2px; height:1em; background:var(--bone); vertical-align:-0.15em; margin-left:2px; animation:cursorBlink .8s steps(1) infinite; }
   @keyframes cursorBlink{ 0%,49%{opacity:1;} 50%,100%{opacity:0;} }
@@ -1785,20 +1866,6 @@
 <body>
 
 <svg width="0" height="0" style="position:absolute;pointer-events:none">
-  <filter id="chromaGlitch" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
-    <feOffset in="SourceGraphic" dx="-1" dy="0" result="rOff"/>
-    <feColorMatrix in="rOff" type="matrix"
-      values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="rChan"/>
-    <feColorMatrix in="SourceGraphic" type="matrix"
-      values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="gChan"/>
-    <feOffset in="SourceGraphic" dx="1" dy="0" result="bOff"/>
-    <feColorMatrix in="bOff" type="matrix"
-      values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="bChan"/>
-    <feBlend in="rChan" in2="gChan" mode="screen" result="rg"/>
-    <feBlend in="rg" in2="bChan" mode="screen" result="split"/>
-    <feTurbulence type="fractalNoise" baseFrequency="0 0.015" numOctaves="1" seed="4" result="tearNoise"/>
-    <feDisplacementMap in="split" in2="tearNoise" scale="0" xChannelSelector="R" yChannelSelector="G"/>
-  </filter>
   <filter id="voidWarp" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
     <feTurbulence type="fractalNoise" baseFrequency="0.008 0.011" numOctaves="2" seed="7" result="warpNoise"/>
     <feDisplacementMap in="SourceGraphic" in2="warpNoise" scale="34" xChannelSelector="R" yChannelSelector="G"/>
@@ -2252,7 +2319,7 @@
   <p>turn your device to see the sky</p>
 </div>
 
-<div id="wake-dialogue"><span id="wake-dialogue-channel">[ CH 0.3 ]</span><span class="wd-corner wd-corner-tr"></span><span class="wd-corner wd-corner-bl"></span><div id="wake-dialogue-text"></div></div>
+<div id="wake-dialogue"><span id="wake-dialogue-channel">[ CH 0.3 ]</span><span id="wake-dialogue-signal"><i></i><i></i><i></i><i></i></span><span class="wd-corner wd-corner-tr"></span><span class="wd-corner wd-corner-bl"></span><div id="wake-dialogue-text"></div><div id="wake-dialogue-chroma"><span class="ch-r"></span><span class="ch-a"></span></div></div>
 
 <div id="hud">
   <div id="top-bar">

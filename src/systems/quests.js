@@ -22,32 +22,50 @@
    separate from `have(state)` (an active quest can have have:false and
    still show a specific in-progress label, not just a generic one). */
 
+// Objective text was flatly instructional before this pass ("Find a way
+// to call for help" / "Reach the relay tower") - functionally correct,
+// but it told the player what to do without ever making them wonder why.
+// Rewritten in the same found-transmission voice as data/dialogue.js's
+// radio lines (lowercase, ellipsis-led, withholding rather than
+// explaining) so the objective panel reads as one more fragment of the
+// world rather than a UI layer sitting outside it. Mechanics (id/have/
+// label wiring, what each entry reads off `state`) are unchanged -
+// this is a text-only pass.
 const QUESTS = [
   {
     id: 'find-radio',
-    name(){ return 'Find a way to call for help'; },
+    name(){ return 'something out there is still transmitting'; },
     have(state){ return !!state.radioCollected; },
-    label(state){ return state.radioCollected ? 'Found' : 'Searching'; },
+    label(state){ return state.radioCollected ? 'found' : 'searching'; },
   },
   {
     id: 'reach-tower',
-    name(){ return 'Reach the relay tower'; },
+    name(){ return 'the mast on the ridge — they can\'t find you until you find it'; },
     have(state){ return !!state.relayActive; },
     label(state){
-      if(state.relayActive) return 'Online';
-      return state.radioCollected ? 'In progress' : 'Not yet';
+      if(state.relayActive) return 'online';
+      return state.radioCollected ? 'in progress' : 'not yet';
     },
   },
   {
     id: 'unlock-door',
-    name(){ return 'Get back into the locked room'; },
+    name(){ return 'the locked room wasn\'t locked with a key'; },
     have(state){ return !!state.doorUnlocked; },
     label(state){
-      if(state.doorUnlocked) return 'Unlocked';
-      if(state.relayActive) return 'Now open';
-      if(state.doorKeyStatus==='notHere') return 'Key not here';
-      if(state.doorKeyStatus==='searching') return 'Searching';
-      return 'Sealed';
+      if(state.doorUnlocked) return 'open';
+      if(state.relayActive) return 'now open';
+      if(state.doorKeyStatus==='notHere') return 'not the key';
+      if(state.doorKeyStatus==='searching') return 'searching';
+      return 'sealed';
+    },
+  },
+  {
+    id: 'leave-downtown',
+    name(){ return 'that light isn\'t yours to walk toward — the road out is'; },
+    have(state){ return !!state.enteredMap2; },
+    label(state){
+      if(state.enteredMap2) return 'gone';
+      return state.doorwayLightSeen ? 'walking' : 'not yet';
     },
   },
 ];

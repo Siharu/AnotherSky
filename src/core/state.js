@@ -46,6 +46,13 @@ const state = {
   radioOn:false,
   minimapUnlocked:false,
   radioCollected:false,
+  firstBroadcastDone:false,
+  doorwayLightSeen:false,
+  insightGlimpseShown:false,
+  nearCalendar:false,
+  nearStorageDrawer:false,
+  calendarRead:false,
+  storageDrawerOpened:false,
   nearRadio:false,
   nearNotebook:false,
   nearLockedDoor:false,          // safehouse locked room door - see tryInteract()/showLineBox

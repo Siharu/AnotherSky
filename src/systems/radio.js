@@ -29,7 +29,7 @@ import {
   radioAmbientLines, radioWarningLines, radioHuntLines,
   radioLowSanityLines, radioDreadLines, radioTowerHintLines, radioTowerFoundLines,
   radioFalseSafeLines, radioPhantomLines,
-  radioFourYearLines, radioChoirLines,
+  radioFourYearLines, radioChoirLines, radioFirstPowerOnLine,
 } from '../data/dialogue.js';
 import { radioTicker } from '../ui/hud.js';
 
@@ -68,7 +68,13 @@ export function pickSituationalRadioLine(forceWarning){
 }
 
 export function broadcastRadio(forceWarning){
-  const pick = pickSituationalRadioLine(forceWarning);
+  // Beat 4.4: the very first thing this radio ever says is scripted, not
+  // rolled - see radioFirstPowerOnLine's header comment in dialogue.js.
+  // Every broadcast after this one falls through to the normal weighted
+  // pools as before.
+  const pick = !state.firstBroadcastDone
+    ? (state.firstBroadcastDone = true, { text: radioFirstPowerOnLine, warning:false })
+    : pickSituationalRadioLine(forceWarning);
   radioTicker.textContent = pick.text;
   radioTicker.classList.add('show');
   clearTimeout(broadcastRadio._hideT);

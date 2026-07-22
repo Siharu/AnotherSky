@@ -108,6 +108,7 @@ import {
   buildSafehouse, buildSafehouseExterior,
   updateDoorFlash, updateSafehouseInterior,
   NOTEBOOK_POS, LOCKED_DOOR_POS, BED_TABLE_POS, SAFEHOUSE_DOOR_YAW,
+  CALENDAR_POS, STORAGE_DRAWER_POS, CALENDAR_LAST_DAY,
   SAFEHOUSE_CENTER,
 } from './world/safehouse.js';
 import { updateDoorTransitions } from './systems/doors.js';
@@ -1025,6 +1026,105 @@ function updateWindowFigure(dt){
   }
 }
 
+/* ---------- INSIGHT GLIMPSE (Bloodborne overlay, MAP1_TONE_INFLUENCES.md) ----------
+   Deliberately NOT the window figure above - that's a loud, repeatable,
+   mechanically active thing (hum, push, static burst). This is the
+   opposite: "clarity is punishment" - a single, silent, once-ever detail
+   that only exists in the player's perception once dread has actually
+   cost them something. No line, no sound, no notebook entry, no radio
+   confirmation - per the doc, "insight-gated visibility... isn't
+   explained if the player goes back to check later." Once shown, it
+   never shows again for the rest of the playthrough (state-flagged,
+   save-persisted) - going back to look is guaranteed to find nothing,
+   which is the point.
+
+   Distinct from every other apparition in this file on purpose: no
+   glitch shader, no static, calm and motionless rather than corrupted -
+   the wrongness here is that it's TOO clear, not that it's degraded. */
+const INSIGHT_DREAD_THRESHOLD = 0.65; // matches playerDreadHighLines' existing "high dread" line elsewhere
+const INSIGHT_DIST = 19;
+const INSIGHT_HOLD = 3.4;
+const INSIGHT_FADE = 1.6;
+
+function insightTexture(){
+  const w=192,h=320,c=document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx=c.getContext('2d');
+  // Plain, still, unbroken silhouette - deliberately the calmest, most
+  // legible shape in the whole file. No scanline cuts, no corruption -
+  // contrast with figureTexture() above is the entire point.
+  ctx.fillStyle='#0b0b0d';
+  ctx.beginPath();
+  ctx.ellipse(w/2, h*0.14, w*0.12, h*0.1, 0, 0, Math.PI*2); // head
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(w*0.34, h*0.26);
+  ctx.quadraticCurveTo(w*0.5, h*0.22, w*0.66, h*0.26);
+  ctx.lineTo(w*0.60, h*0.94);
+  ctx.quadraticCurveTo(w*0.5, h*0.97, w*0.40, h*0.94);
+  ctx.closePath();
+  ctx.fill();
+  return new THREE.CanvasTexture(c);
+}
+const insightMaterial = new THREE.MeshBasicMaterial({
+  map: insightTexture(), transparent:true, opacity:0, depthWrite:false, fog:false,
+});
+const insightMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 2.8), insightMaterial);
+insightMesh.visible = false;
+scene.add(insightMesh);
+
+const insightState = { phase:'idle', t:0 }; // idle -> holding -> fading -> done
+
+function updateInsightGlimpse(dt){
+  if(state.insightGlimpseShown) return;
+  if(insightState.phase==='idle'){
+    if(state.dread < INSIGHT_DREAD_THRESHOLD) return;
+    // Spawn once, off to one side of wherever the player happens to be
+    // looking right now - genuinely peripheral (not dead ahead), so it
+    // can't be mistaken for a normal in-frame prop the moment it appears.
+    const side = Math.random()<0.5 ? -1 : 1;
+    const offsetAng = (0.55 + Math.random()*0.25) * side; // ~31-46 degrees off center
+    const baseAngle = state.yaw + offsetAng;
+    const dirX = -Math.sin(baseAngle), dirZ = -Math.cos(baseAngle);
+    const x = state.playerX + dirX*INSIGHT_DIST, z = state.playerZ + dirZ*INSIGHT_DIST;
+    insightMesh.position.set(x, groundHeightAt(x,z) + 1.4, z);
+    insightMesh.visible = true;
+    insightMaterial.opacity = 0;
+    insightState.phase = 'holding';
+    insightState.t = 0;
+    return;
+  }
+  if(!insightMesh.visible) return;
+  // Billboard toward the player at all times - it's a presence, not a
+  // fixed prop, but it never moves from its spot once placed.
+  const ang = Math.atan2(state.playerX-insightMesh.position.x, state.playerZ-insightMesh.position.z);
+  insightMesh.rotation.y = ang;
+  insightState.t += dt;
+  // "Gone if you look directly at it" - Bloodborne's insight framing,
+  // checked with a tighter cone than the shared facingTarget() helper
+  // (that one's tuned for interactable props at close range, ~70deg;
+  // this wants a narrow, deliberate stare, not just facing the general
+  // direction). Confirmed direct attention cuts the encounter short
+  // rather than letting the player study it.
+  const dx = insightMesh.position.x-state.playerX, dz = insightMesh.position.z-state.playerZ;
+  const dist = Math.hypot(dx,dz);
+  const fwdX = -Math.sin(state.yaw), fwdZ = -Math.cos(state.yaw);
+  const lookDot = dist>0.001 ? (fwdX*dx/dist + fwdZ*dz/dist) : 0;
+  const staredAt = lookDot > 0.93;
+  if(insightState.phase==='holding'){
+    insightMaterial.opacity = Math.min(0.5, insightMaterial.opacity + dt/1.1); // never reads as fully solid, even at peak
+    if(staredAt || insightState.t > INSIGHT_HOLD){ insightState.phase = 'fading'; insightState.t = 0; }
+  } else if(insightState.phase==='fading'){
+    const fadeSpeed = staredAt ? 3.2 : (1/INSIGHT_FADE); // caught staring -> it drops out fast, not a graceful fade
+    insightMaterial.opacity = Math.max(0, insightMaterial.opacity - dt*fadeSpeed);
+    if(insightMaterial.opacity <= 0){
+      insightMesh.visible = false;
+      insightState.phase = 'done';
+      state.insightGlimpseShown = true; // permanent - see state.js/save.js
+      writeSave();
+    }
+  }
+}
+
 {
   const ruinCount = 85;
   for(let i=0;i<ruinCount;i++){
@@ -1706,7 +1806,16 @@ function collectRadio(){
   state.radioOn = true; // switches itself on - one less thing to figure out mid-panic
   radioBtn.classList.add('toggled');
   resetRadioTimer(3);
-  showLineBox('...a radio. still has weight to it. still might work.', { hold:1900 });
+  showLineBox('...a radio. still has weight to it. still might work.', { hold:1900 }).then(()=>{
+    // Guaranteed follow-up beat, not an RNG broadcast (radioTowerHintLines
+    // in data/dialogue.js still fires separately, ~40% chance per
+    // broadcast, once minimapUnlocked is false - see systems/radio.js).
+    // This one line is the actual tutorial hook: the player should not
+    // have to get lucky on a random transmission to learn there's a
+    // tower at all. Fires once, right after the pickup line finishes,
+    // before the radio's had a chance to say anything of its own.
+    showLineBox("...there's a note taped to the back. \"reach the nearest tower.\" someone else's handwriting.", { hold:2400 });
+  });
   writeSave('checkpoint');
 }
 /* ---------- GHUULS (the watchers) ----------
@@ -1856,6 +1965,8 @@ function tryInteract(){
   if(state.nearLockedDoor){ tryLockedDoor(); return; }
   if(state.nearBedTable){ checkBedTable(); return; }
   if(state.nearAnsweringMachine){ playAnsweringMachine(); return; }
+  if(state.nearCalendar){ checkCalendar(); return; }
+  if(state.nearStorageDrawer){ checkStorageDrawer(); return; }
   if(state.nearOrbId<0) return;
   const orbData = orbMeshes.find(o=>o.id===state.nearOrbId);
   if(!orbData || orbData.collected) return;
@@ -1879,12 +1990,13 @@ function tryInteract(){
 }
 
 function triggerMap1Closer(){
-  // Not one of the four bad endings - the save/collected progress stays
-  // intact. This is the door's natural resting point: the world went
-  // quiet, something's on the other side, and there's nowhere further to
-  // walk in THIS build. Real Map 2 content should key off
-  // state.enteredMap2 rather than anything time-based, so this beat only
-  // ever needs to fire once no matter how the eventual next area hooks in.
+  // Beat 11 (MAP1_DOWNTOWN_EMPATHY_STRUCTURE.md §1): "Open road. Head
+  // pain. Blackout. Map 1 ends here — no depicted cause for the gap,
+  // deliberately." Not one of the four bad endings - save/collected
+  // progress stays intact, same as before. Text below replaces the old
+  // placeholder ("isn't part of this map yet") with the actual scripted
+  // beat; everything else about the screen (shared with the bad-ending
+  // beat, restored on close) is unchanged.
   if(state.enteredMap2) return;
   state.enteredMap2 = true;
   writeSave('checkpoint');
@@ -1892,7 +2004,7 @@ function triggerMap1Closer(){
   const textEl = document.getElementById('ending-text');
   const smallEl = el ? el.querySelector('.small') : null;
   const smallOriginal = smallEl ? smallEl.textContent : null;
-  if(textEl) textEl.textContent = "The door's open. Whatever's on the other side isn't part of this map yet.";
+  if(textEl) textEl.textContent = "The road opens up ahead, same as it always does. Then — pain, blooming behind the eyes, sudden and total, like something finally noticed how far you'd gotten. Then nothing.";
   if(smallEl) smallEl.textContent = 'end of chapter — tap to close your eyes again';
   if(el){
     el.classList.add('show');
@@ -1901,6 +2013,31 @@ function triggerMap1Closer(){
       el.removeEventListener('click', onClose);
       if(smallEl && smallOriginal!==null) smallEl.textContent = smallOriginal; // this screen is shared with the real bad-ending beat - don't leave it mutated
     }, {once:true});
+  }
+}
+
+// Beat 11 - the open road. Only becomes reachable once the doorway-light
+// beat has actually played (state.doorwayLightSeen), so the ending can
+// never cut in before the player's had the door payoff. Distance-along-
+// road is just state.playerX since EXIT_ROAD_ANGLE is 0 (straight out
+// along +X, see world/worldData.js); the halfwidth check keeps this from
+// firing if the player somehow wanders out that far off the actual road.
+// Threshold sits well past DOWNTOWN_EDGE (195) but short of EXIT_ROAD_END
+// (430, deep forest) - "open road" per the beat name, not "reached the
+// treeline," which belongs to Map 2's own opening.
+const EXIT_BLACKOUT_DIST = 260;
+let exitHeadPainShown = false;
+function updateExitBlackout(dt){
+  if(!state.doorwayLightSeen || state.enteredMap2) return;
+  const along = state.playerX*exitRoadDirX + state.playerZ*exitRoadDirZ;
+  const across = Math.abs(state.playerX*exitRoadPerpX + state.playerZ*exitRoadPerpZ);
+  if(across > EXIT_ROAD_HALFWIDTH + 3) return; // stay on the actual road, not just far east
+  if(along > EXIT_BLACKOUT_DIST - 40 && !exitHeadPainShown){
+    exitHeadPainShown = true;
+    showLineBox("...head hurts. that's new. that's - that's not the walking, that's something else.", { hold: 2600 });
+  }
+  if(along > EXIT_BLACKOUT_DIST){
+    setTimeout(()=> triggerMap1Closer(), 1400);
   }
 }
 
@@ -1942,11 +2079,22 @@ function tryLockedDoor(){
   if(state.relayActive){
     if(!state.doorUnlocked){
       state.doorUnlocked = true;
+      writeSave('checkpoint');
       showLineBox(doorApproachLine, { hold: 2600 });
       setTimeout(()=> showLineBox(doorOpenPlayerLine, { hold: 3400 }), 2800);
       setTimeout(()=> showLineBox(doorOpenRadioLine, { hold: 4200 }), 6400);
-      setTimeout(()=> triggerMap1Closer(), 11200);
-      writeSave('checkpoint');
+      // Beat 10 hook (MAP1_DOWNTOWN_EMPATHY_STRUCTURE.md §5): "Map 1 should
+      // end on the open doorway and a light source the player hasn't seen
+      // yet... then cut/fade — the reveal itself belongs to the next
+      // document." So this line only ever describes the light, never
+      // steps through it. What's actually behind the door stays
+      // unscripted on purpose - that's Map 2's opening, not this one's.
+      setTimeout(()=> showLineBox("...that light isn't the safehouse's. wrong color for anything in here. i'm not going in yet.", { hold: 3600 }), 11200);
+      // Doesn't close the chapter here anymore - Beat 11 (the open-road
+      // blackout) is a real, walkable beat now instead of an instant cut,
+      // see updateExitBlackout(). state.doorwayLightSeen gates that beat
+      // so the ending can't fire before this sequence has actually played.
+      setTimeout(()=>{ state.doorwayLightSeen = true; writeSave('checkpoint'); }, 15400);
     }
     return;
   }
@@ -1969,6 +2117,42 @@ function checkBedTable(){
     showLineBox("nothing in the drawer. key's not here.", { hold: 3200 });
     writeSave();
   }
+}
+
+// 999-overlay puzzle (MAP1_TONE_INFLUENCES.md's numerology section, see
+// CALENDAR_POS/STORAGE_DRAWER_POS's header in world/safehouse.js).
+// Reading the calendar is unlimited/repeatable - the line only changes
+// once, from "notice it" to "you already know this" - and just flags
+// state.calendarRead, which is the only thing checkStorageDrawer() below
+// actually needs.
+function checkCalendar(){
+  if(!state.calendarRead){
+    state.calendarRead = true;
+    showLineBox(`...someone was crossing off days. stopped at the ${CALENDAR_LAST_DAY}th. rest of the month's still blank.`, { hold: 3200 });
+    writeSave();
+  } else {
+    showLineBox("...still the same date. still nothing after it.", { hold: 2200 });
+  }
+}
+
+// The drawer only ever needs to know whether the player has actually
+// read the calendar first - no separate number-entry UI (deliberately
+// kept "optional, non-blocking" per the doc, one interact prompt rather
+// than a new input system for a single reward). Opens exactly once;
+// repeat interacts after that just re-show the same line rather than
+// re-triggering the reward.
+function checkStorageDrawer(){
+  if(state.storageDrawerOpened){
+    showLineBox("...already been through this one. still just the one thing in it.", { hold: 2200 });
+    return;
+  }
+  if(!state.calendarRead){
+    showLineBox("...a latch, numbered. i'd need to know what day to try first.", { hold: 2600 });
+    return;
+  }
+  state.storageDrawerOpened = true;
+  showLineBox(`...${CALENDAR_LAST_DAY}. it gives. one thing inside - a torch, half-charged, and a scrap of paper: "if you're reading this, you crossed off the same day I did."`, { hold: 4600 });
+  writeSave('checkpoint');
 }
 
 // radioAmbientLines/etc., bearingToCompassAngle(), pickSituationalRadioLine(),
@@ -2061,6 +2245,11 @@ function restoreFromSave(save){
     if(radioPickupMesh){ scene.remove(radioPickupMesh); radioPickupMesh = null; }
     radioBtn.classList.remove('locked');
   }
+  state.firstBroadcastDone = !!save.firstBroadcastDone;
+  state.doorwayLightSeen = !!save.doorwayLightSeen;
+  state.insightGlimpseShown = !!save.insightGlimpseShown;
+  state.calendarRead = !!save.calendarRead;
+  state.storageDrawerOpened = !!save.storageDrawerOpened;
   if(save.minimapUnlocked){
     state.minimapUnlocked = true;
     const mm = $('minimap'); if(mm) mm.classList.add('visible');
@@ -2540,9 +2729,11 @@ function ransomizeRich(el, opts){
 }
 
 /* ---------- WAKE DIALOGUE ----------
-   Autoplays right after the eyes open: three broken half-thoughts, each
-   typed out then re-set with mismatched ransom-note fonts, with a short
-   chromatic glitch burst on the box itself between lines. */
+   Autoplays right after the eyes open: four broken half-thoughts -
+   disoriented noun-fragments and unfinished questions rather than
+   self-narrated "step one" therapy-speak - each typed out then re-set
+   with mismatched ransom-note fonts, with a short chromatic glitch burst
+   on the box itself between lines. */
 function sleep(ms){ return new Promise(res=>setTimeout(res, ms)); }
 
 async function typeLine(el, text, opts){
@@ -2551,9 +2742,18 @@ async function typeLine(el, text, opts){
   el.textContent = '';
   const cursor = document.createElement('span');
   cursor.id = 'wake-dialogue-cursor';
+  const chromaR = document.querySelector('#wake-dialogue-chroma .ch-r');
+  const chromaA = document.querySelector('#wake-dialogue-chroma .ch-a');
   for(let i=0;i<text.length;i++){
-    el.textContent = text.slice(0, i+1);
+    const shown = text.slice(0, i+1);
+    el.textContent = shown;
     el.appendChild(cursor);
+    // The chroma-tear layer ghosts whatever's actually on screen right
+    // now, offset sideways in rust/amber - it's a bleeding duplicate of
+    // the real text, not independent content, so it has to track the
+    // typing in step rather than only getting set once at the end.
+    if(chromaR) chromaR.textContent = shown;
+    if(chromaA) chromaA.textContent = shown;
     const ch = text[i];
     // ellipses and the stammered cut-offs get a longer, uneven hold -
     // this is where the stutter reads as a stutter instead of just typing
@@ -2565,15 +2765,49 @@ async function typeLine(el, text, opts){
   cursor.remove();
 }
 
+// Signal bars: bar 1 is dead by default (the box's signal is weak,
+// always - see index.html's #wake-dialogue-signal comment), a burst
+// knocks one more of the remaining three out at random, then restores
+// to that same weak baseline afterward rather than to full health.
+function resetSignalBaseline(){
+  document.querySelectorAll('#wake-dialogue-signal i').forEach((b,idx)=>{
+    b.classList.toggle('dead', idx===0);
+  });
+}
+resetSignalBaseline(); // box starts weak, not full-health, from the moment the page loads
+function triggerDialogueGlitch(box, holdMs){
+  const bars = [...document.querySelectorAll('#wake-dialogue-signal i')];
+  resetSignalBaseline();
+  const remaining = bars.slice(1);
+  if(remaining.length){
+    remaining[Math.floor(Math.random()*remaining.length)].classList.add('dead');
+  }
+  box.classList.add('glitch-burst');
+  setTimeout(()=>{
+    box.classList.remove('glitch-burst');
+    resetSignalBaseline();
+  }, holdMs!==undefined ? holdMs : 220);
+}
+
 export async function playWakeDialogue(){
   const box = $('wake-dialogue');
   const textEl = $('wake-dialogue-text');
   if(!box || !textEl) return;
   if(dialogueBoxBusy) return; // shouldn't happen this early, but never barge over another line
   dialogueBoxBusy = true;
+  resetSignalBaseline();
+  // Line 3 used to be "notebook on the floor. handwriting's mine. don't
+  // remember writing it." - three thoughts bundled into one, and it
+  // jumped straight to "it's mine" with no noticing beat first. Split
+  // into three separate single-beat lines: notice the object exists ->
+  // notice it's actually filled with writing -> only then react to that
+  // writing being recognizably his own.
   const lines = [
-    { text:'...okay. okay. eyes open. that\'s step one.', hold:1500 },
-    { text:'don\'t know this place. don\'t know my own name, either — one thing at a time.', hold:1700 },
+    { text:'...ceiling. unknown ceiling.', hold:1400 },
+    { text:'unknown room. where — where am I.', hold:1500 },
+    { text:'there\'s a notebook on the floor.', hold:1100 },
+    { text:'...pages, filled. someone\'s been writing in it.', hold:1400 },
+    { text:'that\'s my handwriting. i don\'t remember writing it.', hold:1700 },
     { text:'whatever happened here, it\'s still happening. move.', hold:1900 }
   ];
   await sleep(900); // let the scene breathe before the first thought arrives
@@ -2581,22 +2815,19 @@ export async function playWakeDialogue(){
   for(let i=0;i<lines.length;i++){
     await typeLine(textEl, lines[i].text);
     ransomize(textEl); // words snap into mismatched fonts once the line lands
-    box.classList.add('glitch-burst');
-    setTimeout(()=>box.classList.remove('glitch-burst'), 220);
+    triggerDialogueGlitch(box);
     await sleep(lines[i].hold);
     if(i < lines.length-1){
       // a quick glitch-out before the next fractured thought
-      box.classList.add('glitch-burst');
+      triggerDialogueGlitch(box, 140);
       await sleep(140);
-      box.classList.remove('glitch-burst');
       textEl.textContent = '';
       await sleep(220);
     }
   }
-  box.classList.add('glitch-burst');
+  triggerDialogueGlitch(box);
   await sleep(200);
   box.classList.remove('visible');
-  box.classList.remove('glitch-burst');
   textEl.textContent = '';
   dialogueBoxBusy = false;
 }
@@ -2614,16 +2845,15 @@ async function showLineBox(text, opts){
   const textEl = $('wake-dialogue-text');
   if(!box || !textEl) return false;
   dialogueBoxBusy = true;
+  resetSignalBaseline();
   box.classList.toggle('compact', !!opts.compact);
   box.classList.add('visible');
   await typeLine(textEl, text, { delay: opts.delay });
   if(opts.ransom) ransomize(textEl);
-  box.classList.add('glitch-burst');
-  setTimeout(()=>box.classList.remove('glitch-burst'), 220);
+  triggerDialogueGlitch(box);
   await sleep(opts.hold!==undefined ? opts.hold : 1700);
-  box.classList.add('glitch-burst');
+  triggerDialogueGlitch(box, 160);
   await sleep(160);
-  box.classList.remove('glitch-burst');
   box.classList.remove('visible');
   box.classList.remove('compact');
   textEl.textContent = '';
@@ -2819,6 +3049,7 @@ function animate(){
     updatePlayer(dt);
     updateGhuul(dt, playStinger);
     updateOrbs(dt);
+    updateExitBlackout(dt);
     updateRain(dt);
     updateWeatherLabel();
     updateDust(dt);
@@ -3011,6 +3242,22 @@ function updateOrbs(dt){
     state.nearOrbId = -1;
     return;
   }
+  state.nearCalendar = facingTarget(CALENDAR_POS.x, CALENDAR_POS.z, 1.6);
+  if(state.nearCalendar){
+    interactPrompt.textContent = ('ontouchstart' in window) ? 'touch to read the calendar' : '[E] read the calendar';
+    interactPrompt.classList.add('show');
+    interactBtn.classList.add('active');
+    state.nearOrbId = -1;
+    return;
+  }
+  state.nearStorageDrawer = facingTarget(STORAGE_DRAWER_POS.x, STORAGE_DRAWER_POS.z, 1.5);
+  if(state.nearStorageDrawer){
+    interactPrompt.textContent = ('ontouchstart' in window) ? 'touch to try the latch' : '[E] try the latch';
+    interactPrompt.classList.add('show');
+    interactBtn.classList.add('active');
+    state.nearOrbId = -1;
+    return;
+  }
   let nearest=-1, nearestDist=3.2;
   for(const o of orbMeshes){
     if(o.collected) continue;
@@ -3070,6 +3317,7 @@ function updateSky(dt){
   skyClock += dt;
   updateEyeStorm(dt);
   updateWindowFigure(dt);
+  updateInsightGlimpse(dt);
 
   if(!state.skyEventTriggered && state.started && state.minimapUnlocked){
     state.skyEventTriggered = true;

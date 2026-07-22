@@ -71,6 +71,18 @@ const weatherLabelCondEl = document.getElementById('weather-label-cond');
 let lastWeatherTier = null;
 export function updateWeatherLabel(){
   if(!weatherLabelEl || !weatherLabelCondEl) return;
+  // Both the weather readout and the system clock (see hud-clock below)
+  // are meant to read as "the radio's telemetry," not ambient HUD chrome
+  // - they stay hidden until state.radioCollected, same gating quests.js
+  // already uses for the objective panel. Cheap per-frame check (one
+  // boolean, one classList toggle only on actual change), called from
+  // animate() same as before.
+  if(!state.radioCollected){
+    if(weatherLabelEl.classList.contains('visible')) weatherLabelEl.classList.remove('visible');
+    if(hudClockEl && hudClockEl.classList.contains('visible')) hudClockEl.classList.remove('visible');
+    return;
+  }
+  if(hudClockEl && !hudClockEl.classList.contains('visible')) hudClockEl.classList.add('visible');
   const n = getNearbySquallCount();
   const tier = n<=0 ? 'light' : (n<=2 ? 'rain' : 'heavy');
   if(tier===lastWeatherTier) return;

@@ -53,6 +53,17 @@ export const radioTowerFoundLines = [
   "...we've got a rough fix on you now. stay near open ground...",
 ];
 
+// First power-on line (MAP1_DOWNTOWN_EMPATHY_STRUCTURE.md §4.4) - fires
+// exactly once, guaranteed, the very first time the radio broadcasts at
+// all. Everything else in this file is picked from a pool by chance;
+// this one line is scripted specifically so "get to the mast" reads as
+// the map's stated goal from the first thing the player ever hears on
+// this radio, not as ambient flavor the player might miss for minutes
+// if radioTowerHintLines happens not to roll. See systems/radio.js -
+// broadcastRadio() checks state.firstBroadcastDone before falling back
+// to pickSituationalRadioLine()'s normal pools.
+export const radioFirstPowerOnLine = "...relay seven, holding. if anyone's on this frequency — get to the mast. we can't find you until you do.";
+
 // New mystery material (docs/story/ANOTHER_SKY_new_mystery.md), wired into
 // systems/radio.js's pickSituationalRadioLine(): radioFourYearLines surfaces
 // once fragment #12 or #19 is collected, radioChoirLines once #14 is -
