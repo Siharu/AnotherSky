@@ -143,6 +143,33 @@ const BED_TABLE_POS = {
   z: SAFEHOUSE_CENTER.z + (SAFEHOUSE_HALF_D - 2.5)
 }; // radio room, beside the cot's headboard end, south of the cot itself
 
+// Restored - main.js's checkCalendar()/checkStorageDrawer() and the
+// facingTarget() proximity checks that gate state.nearCalendar/
+// nearStorageDrawer both already import these three by name, but they'd
+// gone missing from this module entirely (not even present unexported),
+// which hard-crashed the whole game on load (a missing named export is a
+// SyntaxError, not a runtime null - nothing after this import ever ran,
+// audio included). Positioned by room per the layout sketch above:
+// calendar on the kitchen's west wall (a mundane, always-reachable prop,
+// same reachability as NOTEBOOK_POS), storage drawer against the storage
+// room's east wall. No physical meshes built for either yet - the
+// interaction triggers work (same facingTarget pattern as every other
+// prop), but there's nothing visible to walk up to yet. Follow-up, not
+// this fix's scope.
+const CALENDAR_POS = {
+  x: SAFEHOUSE_CENTER.x + (KITCHEN_DIV_X - 1.6),
+  z: SAFEHOUSE_CENTER.z + (-1.0)
+};
+const STORAGE_DRAWER_POS = {
+  x: SAFEHOUSE_CENTER.x + (STORAGE_DIV_X + 2.2),
+  z: SAFEHOUSE_CENTER.z + (-2.0)
+};
+// The day the calendar's crossed-off marks stop on - referenced in both
+// checkCalendar()'s and checkStorageDrawer()'s lines in main.js. Picked
+// to read as "recent, not the start of the month" without pinning to a
+// specific real date the lore doesn't otherwise commit to.
+const CALENDAR_LAST_DAY = 23;
+
 // Ground-up rebuild, ported from the previous single-box safehouse. Every
 // interior material still carries its own baked-in `emissive` floor - a
 // genuine minimum brightness that doesn't depend on scene lighting, fog,
@@ -1145,5 +1172,6 @@ export {
   buildSafehouse, buildSafehouseExterior,
   updateDoorFlash, updateSafehouseInterior,
   NOTEBOOK_POS, LOCKED_DOOR_POS, BED_TABLE_POS, SAFEHOUSE_DOOR_YAW,
+  CALENDAR_POS, STORAGE_DRAWER_POS, CALENDAR_LAST_DAY,
   EXTERIOR_CENTER,
 };
