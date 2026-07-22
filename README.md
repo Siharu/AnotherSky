@@ -1,6 +1,10 @@
 <div align="center">
 
+<<<<<<< HEAD
 <img src="assets/banner.svg" alt="Another Sky" width="100%" />
+=======
+<img src="assets/readme/banner.svg" alt="Another Sky" width="100%" />
+>>>>>>> d9445843f07bbc1c0f64e0653778bf050e650f25
 
 # ANOTHER SKY
 
@@ -34,12 +38,21 @@ Somewhere above all of it, the sky keeps changing. Watch it long enough and you'
 
 <div align="center">
 
+<<<<<<< HEAD
 <img src="assets/broken-street.svg" alt="" width="49%" />
 <img src="assets/safehouse.svg" alt="" width="49%" />
 
 <br/><br/>
 
 <img src="assets/map-one.svg" alt="" width="70%" />
+=======
+<img src="assets/readme/broken-street.svg" alt="" width="49%" />
+<img src="assets/readme/safehouse.svg" alt="" width="49%" />
+
+<br/><br/>
+
+<img src="assets/readme/map-one.svg" alt="" width="70%" />
+>>>>>>> d9445843f07bbc1c0f64e0653778bf050e650f25
 
 </div>
 
@@ -49,4 +62,8 @@ Somewhere above all of it, the sky keeps changing. Watch it long enough and you'
 
 *Find the frequency. Follow the wrongness. Don't look up for too long.*
 
+<<<<<<< HEAD
 </div>
+=======
+</div>
+>>>>>>> d9445843f07bbc1c0f64e0653778bf050e650f25

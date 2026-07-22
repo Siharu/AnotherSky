@@ -1,0 +1,67 @@
+<svg viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#050308"/>
+      <stop offset="50%" stop-color="#1c0e1e"/>
+      <stop offset="80%" stop-color="#442030"/>
+      <stop offset="100%" stop-color="#7a4038"/>
+    </linearGradient>
+    <radialGradient id="warmWin" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f2c88a" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#f2c88a" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="grain3">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" result="n"/>
+      <feColorMatrix in="n" type="matrix"
+        values="0 0 0 0 1
+                0 0 0 0 1
+                0 0 0 0 1
+                0 0 0 0.04 0"/>
+    </filter>
+    <filter id="wob3">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012 0.05" numOctaves="2" seed="21" result="w"/>
+      <feDisplacementMap in="SourceGraphic" in2="w" scale="8" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+
+  <rect width="1000" height="500" fill="url(#sky3)"/>
+
+  <!-- treeline silhouette, uneasy -->
+  <g filter="url(#wob3)" opacity="0.9">
+    <path d="M0,340 L40,290 L80,330 L130,270 L170,320 L230,260 L280,330
+             L330,280 L380,335 L420,300 L460,340 L500,300 L540,340
+             L560,290 L600,335 L650,280 L700,330 L740,260 L790,320
+             L840,270 L880,330 L930,290 L1000,340 L1000,500 L0,500 Z"
+      fill="#050308"/>
+  </g>
+
+  <!-- the house -->
+  <g filter="url(#wob3)">
+    <rect x="380" y="280" width="240" height="150" fill="#0e0710"/>
+    <polygon points="365,280 500,190 635,280" fill="#0a050c"/>
+    <rect x="480" y="360" width="50" height="70" fill="#050308"/>
+    <rect x="420" y="310" width="24" height="24" fill="#f2c88a" opacity="0.85"/>
+    <rect x="556" y="310" width="24" height="24" fill="#f2c88a" opacity="0.4"/>
+    <rect x="488" y="230" width="16" height="20" fill="#f2c88a" opacity="0.65"/>
+    <rect x="497" y="185" width="6" height="30" fill="#0a050c"/>
+  </g>
+
+  <!-- warm glow spilling from the one lit window -->
+  <circle cx="432" cy="322" r="60" fill="url(#warmWin)"/>
+
+  <!-- a shape at the treeline that shouldn't be there -->
+  <g filter="url(#wob3)" opacity="0.55">
+    <ellipse cx="130" cy="322" rx="6" ry="20" fill="#050308"/>
+    <circle cx="130" cy="296" r="6" fill="#050308"/>
+  </g>
+
+  <!-- overgrown path -->
+  <path d="M500,430 C480,460 460,480 430,500 L570,500 C540,480 520,460 500,430 Z"
+    fill="#0a050c" opacity="0.8"/>
+
+  <!-- fog pooling at ground -->
+  <rect x="0" y="440" width="1000" height="60" fill="#050308" opacity="0.55"/>
+
+  <rect width="1000" height="500" filter="url(#grain3)"/>
+  <rect width="1000" height="500" fill="black" opacity="0.18"/>
+</svg>
