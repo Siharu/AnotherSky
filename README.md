@@ -1,28 +1,52 @@
-# Another Sky — Project Structure (Phase 2 scaffold)
+<div align="center">
 
-This is the modularization scaffold for `anothersky-horror.html`.
-**The monolith remains the deployed, working build** — nothing here
-replaces it yet. This tree is where code moves *into*, one verified
-piece at a time.
+<img src="assets/banner.svg" alt="Another Sky" width="100%" />
 
-- `docs/ARCHITECTURE.md` — full migration map: what's already moved,
-  what's stubbed, what order to pull the rest in, and how to verify
-  each step before moving to the next.
-- `docs/HANDOFF.md` — existing project handoff notes (carried over).
-- `src/` — the module tree. 5 files are real, working, verified ESM
-  right now (`data/lore.js`, `data/dialogue.js`, `utils/dom.js`,
-  `utils/math.js`, `audio/sfx.js`). Everything else is a documented
-  stub pointing at its target monolith line range.
-- `assets/` — the pipeline for Map 2's real low-poly models (Map 1
-  stays fully procedural). See `assets/README.md` for art direction,
-  poly budgets, and the naming convention, and
-  `assets/models/map2/manifest.json` for the (currently empty) asset
-  registry.
+# ANOTHER SKY
 
-## Next step
+*88.7 FM — if you can still find the frequency, you are not alone.*
 
-Pick one Wave-2 file from `docs/ARCHITECTURE.md`, pull the real code
-in from the monolith, syntax-check it, wire it up, and do a live
-in-browser pass before touching the next one. Don't pull more than one
-Wave-3 file per sitting — those have the most fan-out and are the
-easiest to break silently.
+</div>
+
+---
+
+> **TRANSMISSION LOG — SOURCE UNKNOWN**
+>
+> *You wake up before you remember falling asleep.*
+> *The streetlights are on, but it isn't night.*
+> *Someone has been in your apartment. They left the radio playing.*
+
+---
+
+You don't remember how you got here.
+
+You remember a city — your city, maybe — with a sky the wrong shade of something, hanging low over rooftops that don't sit quite right anymore. You remember a signal, thin and half-drowned in static, repeating a frequency like it wants to be found. You remember a building in the distance that was not there yesterday, and will be closer tomorrow.
+
+The people who are left don't talk about *before*. They talk about the sky — what color it was this morning, what shape the fog took, whether the rain fell black again last night. They keep notebooks. They keep quiet. They keep moving, because stopping too long in one place lets something catch up to you — something that was, once, a person.
+
+There is a house that remembers you, even if you don't remember it. There is a locked room inside it that isn't ready to be opened yet. There is a voice on 88.7 that has been broadcasting long after every other station went dark, and it is not entirely clear who — or what — is still speaking.
+
+Somewhere above all of it, the sky keeps changing. Watch it long enough and you'll start to understand: the sky isn't the backdrop.
+
+**The sky is the warning.**
+
+---
+
+<div align="center">
+
+<img src="assets/broken-street.svg" alt="" width="49%" />
+<img src="assets/safehouse.svg" alt="" width="49%" />
+
+<br/><br/>
+
+<img src="assets/map-one.svg" alt="" width="70%" />
+
+</div>
+
+---
+
+<div align="center">
+
+*Find the frequency. Follow the wrongness. Don't look up for too long.*
+
+</div>
