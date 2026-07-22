@@ -30,6 +30,7 @@ const state = {
   stormDreadBoost: 0,          // temporary forced-dread floor during the eye-storm event
   knockback: {x:0, z:0},       // decaying impulse, e.g. from the window figure's shove
   walkTime: 0,
+  distanceTraveled: 0,        // cumulative world units actually walked since wake - an action-based gate (see updatePlayer/updateWindowFigure) for events that shouldn't fire on a raw boot clock while the player is standing still reading a notebook
   elapsed: 0,                 // real seconds since the game started (kept for other unrelated timers - eye storm, window figure)
   skyWrongness: 0,             // 0 = the calm grey sky you wake up under, 1 = fully "another sky" (red/veined/hole visible)
   skyEventTriggered: false,   // the curdle no longer starts on a raw clock - see updateSky(): fires on reaching the tower or on prolonged idle

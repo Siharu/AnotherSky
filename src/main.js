@@ -558,8 +558,19 @@ const eyeState = Object.assign({
      -> rage (holes churn violently, pinned at max dread) -> settle (fade
      back to the ambient single-hole sky, leaving stormDreadBoost decaying) */
 const EYE_STORM_COUNT = 10;
-const EYE_STORM_TRIGGER_TIME = 300; // 5 minutes
+// Used to be a flat 5-minutes-since-boot clock, firing at the same
+// instant whether the player had reached the tower and the sky was
+// already most of the way curdled, or they were still stuck near spawn
+// and skyEventTriggered hadn't even flipped on yet - the storm could (and
+// did) go off before the event it's supposed to be the climax of had
+// meaningfully started. Tied to skyWrongness instead: it's the payoff
+// beat for the curdle, so it should fire once the curdle's actually most
+// of the way there, whenever that happens to land for this particular
+// playthrough (fast tower rush vs. slow exploration both get a storm
+// that reads as earned rather than scheduled).
+const EYE_STORM_WRONGNESS_THRESHOLD = 0.8;
 let eyeStormFired = false;
+let eyeStormFiredAt = 0;   // state.elapsed at the moment the storm actually fired - since that no longer happens at a predictable fixed time, anything wanting "how long ago did the storm fire" needs the real timestamp, not a constant
 let stormPhase = 'idle';   // idle -> eyes -> tear -> rage -> settle -> idle
 let stormT = 0;
 const stormEntities = [];
@@ -610,8 +621,9 @@ function startEyeStorm(){
 }
 
 function updateEyeStorm(dt){
-  if(!eyeStormFired && state.elapsed >= EYE_STORM_TRIGGER_TIME){
+  if(!eyeStormFired && state.skyWrongness >= EYE_STORM_WRONGNESS_THRESHOLD){
     eyeStormFired = true;
+    eyeStormFiredAt = state.elapsed;
     startEyeStorm();
   }
   if(stormPhase==='idle') return;
@@ -839,7 +851,19 @@ updateFacadePoolCounts();
    and is simply gone. It'll be standing in a different window somewhere
    else a while later. One figure "exists" at a time; it just isn't ever
    where you last saw it. */
-const FIGURE_START_TIME = 40;
+// Used to be a flat 40s-since-boot gate - fired identically whether the
+// player was already out walking the streets or still standing on the
+// title-screen recap / reading the first notebook page. Swapped for the
+// same "did the player actually do something" gate used by the sky
+// curdle (see updateSky's header comment): either they've covered real
+// ground (distanceTraveled, tracked in updatePlayer) or they've already
+// found the tower (minimapUnlocked - a real story beat, and a stronger
+// signal than distance alone since it can happen via a short but direct
+// walk). FIGURE_START_DISTANCE is a little short of a direct spawn->tower
+// walk, so most playthroughs still see the figure appear before the sky
+// itself starts turning, same pacing as before - it just no longer fires
+// while the player hasn't moved.
+const FIGURE_START_DISTANCE = 45;
 const FIGURE_HUM_RANGE = 15;
 const FIGURE_PUSH_RANGE = 3.2;
 
@@ -914,7 +938,7 @@ scene.add(figureMesh);
 const figureState = {
   phase: 'hidden',   // hidden -> idle -> humming -> burst -> vanish -> (cooldown, back to hidden)
   spot: null,
-  timer: 4 + Math.random()*10,   // time until first possible spawn after FIGURE_START_TIME
+  timer: 4 + Math.random()*10,   // time until first possible spawn once the distance/tower gate above opens
   humGain: null, humOsc: null, humFilt: null,
   wasNear: false
 };
@@ -959,7 +983,7 @@ function playFigureStatic(){
 }
 
 function updateWindowFigure(dt){
-  if(state.elapsed < FIGURE_START_TIME) return;
+  if(state.distanceTraveled < FIGURE_START_DISTANCE && !state.minimapUnlocked) return;
   const fp = figureState;
 
   if(fp.phase==='hidden'){
@@ -2926,7 +2950,7 @@ const playerEyeStormLines = [
 function pickSituationalPlayerLine(){
   const anyHunting = ghuulList.some(g=>g.aiState==='HUNT');
   if(anyHunting) return { text: pickFrom(playerFearLines), hold:1600, ransom:true };
-  if(typeof eyeStormFired!=='undefined' && eyeStormFired && state.elapsed - EYE_STORM_TRIGGER_TIME < 45)
+  if(typeof eyeStormFired!=='undefined' && eyeStormFired && state.elapsed - eyeStormFiredAt < 45)
     return { text: pickFrom(playerEyeStormLines), hold:1900, ransom:true };
   if(state.dread > 0.65) return { text: pickFrom(playerDreadHighLines), hold:1900, ransom:true };
   if(state.sanity < 0.32) return { text: pickFrom(playerLowSanityLines), hold:1700, ransom:true };

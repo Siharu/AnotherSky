@@ -94,6 +94,11 @@ export function updatePlayer(dt){
   let nx = state.playerX + (_tmpRight.x*mx + _tmpForward.x*my)*SPEED*dt + state.knockback.x*dt;
   let nz = state.playerZ + (_tmpRight.z*mx + _tmpForward.z*my)*SPEED*dt + state.knockback.z*dt;
   [nx,nz] = resolveCollisions(nx,nz,obstacles);
+  // distance actually covered this frame, post-collision - deliberately measured
+  // after resolveCollisions so shoving into a wall doesn't rack up distance the
+  // player didn't really travel. Knockback-driven movement (window figure shove
+  // etc.) still counts - being pushed through the world is still being "out in it".
+  if(state.started) state.distanceTraveled += Math.hypot(nx-state.playerX, nz-state.playerZ);
   state.playerX = nx; state.playerZ = nz;
   updateDoorTransitions(dt);
   // decaying impulse - a shove reads as a shove only if it fades out fast
