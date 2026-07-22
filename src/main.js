@@ -2606,6 +2606,23 @@ document.querySelectorAll('.svg-menu-btn, .svg-footer-link').forEach(el=>{
     if(e.key==='Enter' || e.key===' '){ e.preventDefault(); el.dispatchEvent(new Event('click')); }
   });
 });
+// The title screen's .menu-btn row got the hover/click piano tone
+// (playMenuTone) wired up above - the in-game hub's own row buttons
+// (.svg-menu-btn: Resume/Memories/Inventory/Radio Log/Help/Settings)
+// never did, despite using the exact same tone function and being the
+// thing players actually hover/click far more once a save exists. Only
+// .svg-menu-btn, not .svg-footer-link (the small in-panel back/close
+// links) - those read as incidental navigation, not "menu row", and
+// firing a musical note on every one of them would be noise rather
+// than feedback.
+document.querySelectorAll('.svg-menu-btn').forEach(el=>{
+  el.addEventListener('pointerenter', ()=> playMenuTone(false));
+  el.addEventListener('focus', ()=> playMenuTone(false));
+  // just the tone here, not corruptPress() - each hub row already calls
+  // corruptPress(el) inside its own click handler below; adding it here
+  // too would just restart that same flash animation twice per click
+  el.addEventListener('click', ()=> playMenuTone(true));
+});
 const hubBtn = $('hub-btn');
 if(!hubBtn) console.error('[hub-btn] element not found in DOM - id mismatch or markup got removed');
 hubBtn.addEventListener('click', ()=>{
