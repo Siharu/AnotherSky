@@ -1,0 +1,123 @@
+<svg viewBox="0 0 1000 340" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#020103"/>
+      <stop offset="30%" stop-color="#120a1a"/>
+      <stop offset="55%" stop-color="#2c0f1c"/>
+      <stop offset="78%" stop-color="#5c1420"/>
+      <stop offset="100%" stop-color="#8f2f2a"/>
+    </linearGradient>
+
+    <radialGradient id="moonGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e8c9b0" stop-opacity="0.9"/>
+      <stop offset="30%" stop-color="#a8443a" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#a8443a" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="dread" cx="50%" cy="0%" r="80%">
+      <stop offset="0%" stop-color="#3a0a12" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#3a0a12" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="silhouette" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#050409"/>
+      <stop offset="100%" stop-color="#0d0a12"/>
+    </linearGradient>
+
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" result="noise"/>
+      <feColorMatrix in="noise" type="matrix"
+        values="0 0 0 0 1
+                0 0 0 0 1
+                0 0 0 0 1
+                0 0 0 0.035 0"/>
+    </filter>
+
+    <filter id="wobble">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012 0.06" numOctaves="2" seed="7" result="warp"/>
+      <feDisplacementMap in="SourceGraphic" in2="warp" scale="14" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+
+    <filter id="veins">
+      <feTurbulence type="fractalNoise" baseFrequency="0.006 0.02" numOctaves="3" seed="41" result="v"/>
+      <feColorMatrix in="v" type="matrix"
+        values="0 0 0 0 0.55
+                0 0 0 0 0.05
+                0 0 0 0 0.08
+                0 0 0 9 -3.2"/>
+    </filter>
+  </defs>
+
+  <rect width="1000" height="340" fill="url(#sky)"/>
+  <rect width="1000" height="340" fill="url(#dread)"/>
+  <rect width="1000" height="340" filter="url(#veins)" opacity="0.5"/>
+
+  <!-- static / scan distortion band -->
+  <g opacity="0.3">
+    <rect x="0" y="60" width="1000" height="2" fill="#f4ecdf"/>
+    <rect x="0" y="118" width="1000" height="1" fill="#f4ecdf"/>
+    <rect x="0" y="205" width="1000" height="1.5" fill="#f4ecdf"/>
+    <rect x="0" y="150" width="1000" height="3" fill="#f4ecdf" opacity="0.15"/>
+  </g>
+
+  <!-- glitch tear blocks -->
+  <g opacity="0.5" filter="url(#wobble)">
+    <rect x="0" y="117" width="260" height="4" fill="#e8c9b0"/>
+    <rect x="420" y="117" width="180" height="4" fill="#e8c9b0"/>
+    <rect x="700" y="204" width="140" height="3" fill="#8f2f2a"/>
+    <rect x="60" y="204" width="220" height="3" fill="#8f2f2a"/>
+  </g>
+
+  <!-- moon, slightly wrong -->
+  <circle cx="740" cy="95" r="95" fill="url(#moonGlow)"/>
+  <circle cx="740" cy="95" r="34" fill="#e2d2bd" opacity="0.92" filter="url(#wobble)"/>
+  <circle cx="740" cy="95" r="34" fill="none" stroke="#3a0a12" stroke-width="0.6" opacity="0.4" filter="url(#wobble)"/>
+  <circle cx="744" cy="93" r="10" fill="#1a0508" opacity="0.55"/>
+  <circle cx="752" cy="88" r="5" fill="#8f2f2a" opacity="0.35"/>
+  <circle cx="730" cy="105" r="4" fill="#8f2f2a" opacity="0.25"/>
+
+  <!-- the Monolith, far off -->
+  <g filter="url(#wobble)" opacity="0.85">
+    <polygon points="120,340 138,110 150,340" fill="#050409"/>
+    <polygon points="138,110 150,340 168,340 146,95" fill="#08060d"/>
+  </g>
+
+  <!-- melting skyline silhouette -->
+  <g filter="url(#wobble)">
+    <path d="
+      M0,340
+      L0,260 L30,258 L34,220 L60,224 L64,190 L92,192 L96,150 L120,152
+      L124,230 L160,232 L164,180 L200,182 L204,240 L240,242 L244,200
+      L280,202 L284,260 L330,258 L334,150 L360,152 L364,240 L410,238
+      L414,190 L450,192 L454,140 L480,142 L484,236 L520,234 L524,170
+      L560,172 L564,250 L600,248 L604,205 L640,207 L644,150 L680,152
+      L684,255 L720,253 L724,170 L760,172 L764,240 L800,238 L804,190
+      L840,192 L844,120 L870,122 L874,235 L900,233 L904,180 L940,182
+      L944,250 L980,248 L984,200 L1000,205 L1000,340 Z"
+      fill="url(#silhouette)"/>
+  </g>
+
+  <!-- thin lit windows, irregular, a few "wrong" colored -->
+  <g opacity="0.8">
+    <rect x="40" y="270" width="3" height="6" fill="#e7d9c3"/>
+    <rect x="70" y="250" width="3" height="6" fill="#e7d9c3"/>
+    <rect x="146" y="260" width="3" height="6" fill="#8a4a52"/>
+    <rect x="210" y="270" width="3" height="6" fill="#e7d9c3"/>
+    <rect x="346" y="200" width="3" height="6" fill="#e7d9c3"/>
+    <rect x="424" y="230" width="3" height="6" fill="#8a4a52"/>
+    <rect x="538" y="210" width="3" height="6" fill="#e7d9c3"/>
+    <rect x="616" y="240" width="3" height="6" fill="#e7d9c3"/>
+    <rect x="736" y="220" width="3" height="6" fill="#8a4a52"/>
+    <rect x="856" y="180" width="3" height="6" fill="#e7d9c3"/>
+    <rect x="916" y="230" width="3" height="6" fill="#e7d9c3"/>
+  </g>
+
+  <!-- ground fog -->
+  <rect x="0" y="300" width="1000" height="40" fill="#0b0c14" opacity="0.55"/>
+
+  <!-- grain overlay -->
+  <rect width="1000" height="340" filter="url(#grain)"/>
+
+  <!-- vignette -->
+  <rect width="1000" height="340" fill="black" opacity="0.22"/>
+</svg>
