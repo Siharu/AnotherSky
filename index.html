@@ -1866,6 +1866,20 @@
 <body>
 
 <svg width="0" height="0" style="position:absolute;pointer-events:none">
+  <filter id="chromaGlitch" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+    <feOffset in="SourceGraphic" dx="-1" dy="0" result="rOff"/>
+    <feColorMatrix in="rOff" type="matrix"
+      values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="rChan"/>
+    <feColorMatrix in="SourceGraphic" type="matrix"
+      values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="gChan"/>
+    <feOffset in="SourceGraphic" dx="1" dy="0" result="bOff"/>
+    <feColorMatrix in="bOff" type="matrix"
+      values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="bChan"/>
+    <feBlend in="rChan" in2="gChan" mode="screen" result="rg"/>
+    <feBlend in="rg" in2="bChan" mode="screen" result="split"/>
+    <feTurbulence type="fractalNoise" baseFrequency="0 0.015" numOctaves="1" seed="4" result="tearNoise"/>
+    <feDisplacementMap in="split" in2="tearNoise" scale="0" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
   <filter id="voidWarp" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
     <feTurbulence type="fractalNoise" baseFrequency="0.008 0.011" numOctaves="2" seed="7" result="warpNoise"/>
     <feDisplacementMap in="SourceGraphic" in2="warpNoise" scale="34" xChannelSelector="R" yChannelSelector="G"/>
