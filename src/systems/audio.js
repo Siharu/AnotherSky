@@ -35,6 +35,13 @@ import { showWhisper } from '../ui/whisper.js';
 
 let audioCtx = null, masterGain = null, heartGain = null, heartTimer = 0;
 let windGain = null, breathGain = null, interiorGain = null;
+let pattGain = null, washGain = null;
+// Base resting gains for the two outdoor rain layers + wind, so the new
+// indoor-muffling tick below has a fixed reference to lerp toward/away
+// from rather than needing to read back whatever value it last set.
+const RAIN_PATT_BASE = 0.22, RAIN_WASH_BASE = 0.3, WIND_BASE = 0.13;
+const INTERIOR_TARGET = 0.5; // interiorGain's resting level once indoors - was created with gain=0 and never touched again anywhere, so the "distinct interior acoustic space" this was built for never actually played
+const INDOOR_OUTDOOR_MUFFLE = 0.22; // outdoor rain/wind heard through walls - muffled, not silent
 
 export function getAudioCtx(){ return audioCtx; }
 export function ensureAudioCtx(){
@@ -74,7 +81,7 @@ export function initAudio(userVolume){
     const pattBuf = makeNoiseBuffer(0.012);
     const pattSrc = audioCtx.createBufferSource(); pattSrc.buffer=pattBuf; pattSrc.loop=true;
     const pattFilter = audioCtx.createBiquadFilter(); pattFilter.type='bandpass'; pattFilter.frequency.value=2600; pattFilter.Q.value=0.5;
-    const pattGain = audioCtx.createGain(); pattGain.gain.value=0.22;
+    pattGain = audioCtx.createGain(); pattGain.gain.value=RAIN_PATT_BASE;
     pattSrc.connect(pattFilter); pattFilter.connect(pattGain); pattGain.connect(masterGain);
     pattSrc.start(0, Math.random()*bufLen/sr);
 
@@ -82,7 +89,7 @@ export function initAudio(userVolume){
     const washBuf = makeNoiseBuffer(0.004);
     const washSrc = audioCtx.createBufferSource(); washSrc.buffer=washBuf; washSrc.loop=true;
     const washFilter = audioCtx.createBiquadFilter(); washFilter.type='lowpass'; washFilter.frequency.value=1400;
-    const washGain = audioCtx.createGain(); washGain.gain.value=0.3;
+    washGain = audioCtx.createGain(); washGain.gain.value=RAIN_WASH_BASE;
     washSrc.connect(washFilter); washFilter.connect(washGain); washGain.connect(masterGain);
     washSrc.start(0, Math.random()*bufLen/sr);
 
@@ -98,7 +105,7 @@ export function initAudio(userVolume){
     const windBuf = makeNoiseBuffer(0.002);
     const windSrc = audioCtx.createBufferSource(); windSrc.buffer=windBuf; windSrc.loop=true;
     const windFilter = audioCtx.createBiquadFilter(); windFilter.type='bandpass'; windFilter.frequency.value=350; windFilter.Q.value=0.7;
-    const windGainNode = audioCtx.createGain(); windGainNode.gain.value=0.13;
+    const windGainNode = audioCtx.createGain(); windGainNode.gain.value=WIND_BASE;
     windGain = windGainNode;
     const lfo = audioCtx.createOscillator(); lfo.frequency.value=0.06;
     const lfoGain = audioCtx.createGain(); lfoGain.gain.value=140;
@@ -125,6 +132,29 @@ export function initAudio(userVolume){
     heartGain = audioCtx.createGain(); heartGain.gain.value=0.0; heartGain.connect(masterGain);
     breathGain = audioCtx.createGain(); breathGain.gain.value=0.6; breathGain.connect(masterGain);
   }catch(e){ /* audio unavailable, continue silently */ }
+}
+
+// Indoor/outdoor ambience mix - this was the missing piece the comments
+// on interiorGain/windGain above kept referencing ("gain is driven every
+// frame by distance to SAFEHOUSE_CENTER", "see the wind gain update
+// below") but no such code ever existed anywhere in this file or
+// main.js: interiorGain was created at gain=0 and never touched again,
+// and the outdoor rain/wind layers connected straight to masterGain at
+// a fixed gain with zero indoor/outdoor distinction - rain sounded
+// identical whether you were standing in the open or inside the
+// safehouse. state.insideSafehouse is already set every frame by
+// weather.js's updateRain(), so this just needs to read it and ease the
+// two mixes toward their indoor/outdoor targets - no new call site
+// wiring needed beyond the one tick call in main.js's update loop.
+export function tickAmbienceMix(dt){
+  if(!pattGain || !washGain || !windGain || !interiorGain) return;
+  const indoors = state.insideSafehouse;
+  const outdoorMul = indoors ? INDOOR_OUTDOOR_MUFFLE : 1.0;
+  const rate = Math.min(1, dt*2.2); // eased over ~0.5s, not snapped - walking through a doorway shouldn't hard-cut the mix
+  pattGain.gain.value += (RAIN_PATT_BASE*outdoorMul - pattGain.gain.value) * rate;
+  washGain.gain.value += (RAIN_WASH_BASE*outdoorMul - washGain.gain.value) * rate;
+  windGain.gain.value += (WIND_BASE*outdoorMul - windGain.gain.value) * rate;
+  interiorGain.gain.value += ((indoors ? INTERIOR_TARGET : 0) - interiorGain.gain.value) * rate;
 }
 
 function playHeartbeat(vol){
