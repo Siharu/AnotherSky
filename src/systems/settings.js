@@ -42,6 +42,13 @@ export let settingsBrightness = 1;
 export let settingsResScale = 1;
 export let settingsInvertY = false;
 export let settingsVibration = true;
+// Real perf lever, unlike settingsResScale's grass-quality piggyback -
+// shadow mapping is a genuine extra render pass (see core/scene.js's
+// renderer.shadowMap.type and every castShadow/receiveShadow flag added
+// across world/buildings.js, world/safehouse.js, and main.js's ground/
+// moonLight). Defaults on since it's the whole point of adding it, but
+// low-end devices/phones need an easy way back out.
+export let settingsShadows = true;
 // Music/SFX volume: the current WebAudio graph (see systems/audio.js) is
 // still a single bus - every source connects straight to masterGain, with
 // no separate music/sfx sub-gain to split off. These two sliders are real,
@@ -61,6 +68,25 @@ export function applyResolution(){
   setGrassQuality(settingsResScale);
 }
 
+export function applyShadows(){
+  // Flipping this one flag skips three.js's entire shadow-map render
+  // pass - the castShadow/receiveShadow flags set all over
+  // world/buildings.js, world/safehouse.js, and main.js's ground/
+  // moonLight stay in place either way, they just go unused while this
+  // is false. Nothing to re-traverse or toggle per-object.
+  renderer.shadowMap.enabled = settingsShadows;
+}
+
+export function applyShadows(){
+  // Flipping .enabled skips three.js's entire shadow-map render pass -
+  // every castShadow/receiveShadow flag set across the codebase stays in
+  // place either way, they just stop being consulted. Cheaper and
+  // simpler than walking every mesh to toggle the flags individually,
+  // and reversible with no re-traversal needed if the player flips it
+  // back on mid-session.
+  renderer.shadowMap.enabled = settingsShadows;
+}
+
 (function loadSettings(){
   try{
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -74,17 +100,19 @@ export function applyResolution(){
       if(typeof s.res === 'number') settingsResScale = s.res;
       if(typeof s.invertY === 'boolean') settingsInvertY = s.invertY;
       if(typeof s.vibration === 'boolean') settingsVibration = s.vibration;
+      if(typeof s.shadows === 'boolean') settingsShadows = s.shadows;
       if(typeof s.muted === 'boolean') state.muted = s.muted;
     }
   }catch(e){}
   applyResolution();
+  applyShadows();
 })();
 
 export function saveSettings(){
   try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify({
     sens:settingsSensMult, vol:userVolume, music:settingsMusicVolume, sfx:settingsSfxVolume,
     bright:settingsBrightness, res:settingsResScale,
-    invertY:settingsInvertY, vibration:settingsVibration, muted:state.muted
+    invertY:settingsInvertY, vibration:settingsVibration, shadows:settingsShadows, muted:state.muted
   })); }catch(e){}
 }
 
@@ -190,9 +218,11 @@ settingsSfx.addEventListener('input', ()=>{
 const settingsMute = $('settings-mute');
 const settingsInvertYEl = $('settings-invert-y');
 const settingsVibrationEl = $('settings-vibration');
+const settingsShadowsEl = $('settings-shadows');
 settingsMute.checked = state.muted;
 settingsInvertYEl.checked = settingsInvertY;
 settingsVibrationEl.checked = settingsVibration;
+settingsShadowsEl.checked = settingsShadows;
 settingsMute.addEventListener('change', ()=>{
   state.muted = settingsMute.checked;
   const mg = getMasterGain();
@@ -205,6 +235,11 @@ settingsInvertYEl.addEventListener('change', ()=>{
 });
 settingsVibrationEl.addEventListener('change', ()=>{
   settingsVibration = settingsVibrationEl.checked;
+  saveSettings();
+});
+settingsShadowsEl.addEventListener('change', ()=>{
+  settingsShadows = settingsShadowsEl.checked;
+  applyShadows();
   saveSettings();
 });
 
@@ -270,4 +305,33 @@ $('settings-delete-save').addEventListener('click', ()=>{
     alert('Save deleted.');
     location.reload();
   }
+});
+$('settings-clear-cache').addEventListener('click', async ()=>{
+  if(!confirm("Clear cached game files and reload? Your save and settings aren't touched - this only clears cached assets, useful if a new version isn't showing up.")) return;
+  // Deliberately does NOT touch localStorage (save data, settings) -
+  // this is for the "I updated the game and the browser is still
+  // running old cached JS/assets" case, not a reset. Both branches are
+  // best-effort: no service worker is registered today (see docs/
+  // HANDOFF.md), but this stays forward-compatible for whenever one is
+  // added, and 'caches' (the Cache Storage API) can be populated by the
+  // browser's own HTTP cache heuristics even with zero SW involvement.
+  try{
+    if('caches' in window){
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+    }
+  }catch(e){}
+  try{
+    if('serviceWorker' in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+    }
+  }catch(e){}
+  // Cache-bust the reload itself - a plain location.reload() can still
+  // be served from the browser's HTTP cache for the HTML/JS documents
+  // themselves even after Cache Storage is cleared, since those are two
+  // separate caching layers. Forcing a fresh URL sidesteps that.
+  const url = new URL(location.href);
+  url.searchParams.set('_cachebust', Date.now());
+  location.href = url.toString();
 });
