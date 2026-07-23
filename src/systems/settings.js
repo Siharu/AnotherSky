@@ -77,16 +77,6 @@ export function applyShadows(){
   renderer.shadowMap.enabled = settingsShadows;
 }
 
-export function applyShadows(){
-  // Flipping .enabled skips three.js's entire shadow-map render pass -
-  // every castShadow/receiveShadow flag set across the codebase stays in
-  // place either way, they just stop being consulted. Cheaper and
-  // simpler than walking every mesh to toggle the flags individually,
-  // and reversible with no re-traversal needed if the player flips it
-  // back on mid-session.
-  renderer.shadowMap.enabled = settingsShadows;
-}
-
 (function loadSettings(){
   try{
     const raw = localStorage.getItem(SETTINGS_KEY);
