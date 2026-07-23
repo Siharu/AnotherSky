@@ -50,4 +50,3 @@ Somewhere above all of it, the sky keeps changing. Watch it long enough and you'
 *Find the frequency. Follow the wrongness. Don't look up for too long.*
 
 </div>
->>>>>>> d9445843f07bbc1c0f64e0653778bf050e650f25
