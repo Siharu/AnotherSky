@@ -197,7 +197,7 @@ let starPoints, starMat;
   starGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
   starGeo.setAttribute('seed', new THREE.BufferAttribute(seeds,1));
   starMat = new THREE.ShaderMaterial({
-    uniforms:{ uTime:{value:0} },
+    uniforms:{ uTime:{value:0}, uCoverage:{value:1.0} },
     transparent:true,
     depthWrite:false,
     vertexShader:`
@@ -212,13 +212,14 @@ let starPoints, starMat;
     `,
     fragmentShader:`
       uniform float uTime;
+      uniform float uCoverage;
       varying float vSeed;
       void main(){
         vec2 c = gl_PointCoord - 0.5;
         float d = length(c);
         if(d>0.5) discard;
         float twinkle = 0.55 + 0.45*sin(uTime*(0.6+fract(vSeed*0.13)*1.4) + vSeed*10.0);
-        float alpha = (1.0-d*2.0) * twinkle;
+        float alpha = (1.0-d*2.0) * twinkle * uCoverage;
         gl_FragColor = vec4(vec3(0.92,0.95,1.0), alpha*0.9);
       }
     `
@@ -346,14 +347,20 @@ const holeFragmentShader = `
         glow = pow(glow, 0.9);
         glow *= 1.0 - smoothstep(0.35, 0.55, radius);
         col = mix(vec3(0.30,0.10,0.23), vec3(0.07,0.03,0.10), glow);
-        alpha = glow * (0.07 + uDread*0.04);
-        alpha = glow * (0.14 + uDread*0.08);
+        alpha = glow * (0.14 + uDread*0.08); // was set twice (a dead 0.07+uDread*0.04 line above it, immediately overwritten) - the actually-used value is this one
       }
 
-      // on the calm opening sky this reads as barely a smudge - a strange
-      // grey patch in the overcast, easy to miss - and only opens up into
-      // the full churning wound as uWrongness climbs.
-      alpha *= mix(0.06, 1.0, smoothstep(0.15, 0.7, uWrongness));
+      // Only the accretion-disk/halo DETAIL ramps in with wrongness - the
+      // event horizon's alpha is intentionally excluded from this (see the
+      // branch above: "true black, fully opaque" was the comment, but this
+      // scaling used to apply to it too, fading the solid core down to
+      // ~6% opacity along with everything else). Without that exclusion
+      // the whole hole reads as a flat, barely-there grey smudge at low
+      // wrongness instead of an actual black silhouette with color/motion
+      // ramping in on top of it as things get worse.
+      if(radius >= horizon){
+        alpha *= mix(0.06, 1.0, smoothstep(0.15, 0.7, uWrongness));
+      }
 
       gl_FragColor = vec4(col, alpha);
     }
