@@ -1475,10 +1475,18 @@
     position:absolute; top:38%; left:50%; transform:translateX(-50%);
     color:var(--rust); font-family:var(--font-serif); font-style:italic; letter-spacing:.15em;
     font-size:clamp(.8rem,3.4vw,1.1rem); opacity:0; text-shadow:0 0 14px rgba(122,31,31,0.6);
-    transition:opacity 1.4s ease, background-color .3s ease; pointer-events:none; text-align:center; width:90%;
-    padding:8px 16px; border-radius:2px;
+    transition:opacity 1.4s ease, background-color .3s ease; pointer-events:none; text-align:center;
+    display:inline-block; max-width:min(90%, 480px); width:max-content;
+    padding:10px 22px; border-radius:2px;
   }
   #whisper.show{ opacity:.85; }
+  @media (max-width:600px), (pointer:coarse){
+    /* Same fix, tighter: without this the box could still read as
+       "half the screen" on a narrow phone even capped at 480px, since
+       480px IS most of a phone's width. Caps to a % of viewport instead
+       on small/touch screens specifically. */
+    #whisper{ max-width:78vw; padding:8px 16px; }
+  }
 
   /* joystick */
   #joystick-zone{ position:absolute; left:0; bottom:0; width:42%; height:56%; pointer-events:auto; }
