@@ -4,7 +4,7 @@
 
 # ANOTHER SKY
 
-*88.7 FM — if you can still find the frequency, you are not alone.*
+*UZB-77 — if you can still find the frequency, you are not alone.*
 
 </div>
 
