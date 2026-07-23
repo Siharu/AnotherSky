@@ -87,11 +87,13 @@ export function updateDread(dt){
   // from the moment the game started, reaching max in under two minutes
   // regardless of story progress - so the world was visibly darkening,
   // shaking, and glitching before the player had even found the relay
-  // tower that's supposed to be causing it. Tied to the same trigger as
-  // the sky curdle now: nothing passive happens until the tower's found.
+  // tower that's supposed to be causing it. Sky curdle itself is pickup-
+  // driven now (see main.js's targetSkyWrongness()), not tower-triggered,
+  // so this follows the same signal: nothing passive happens until the
+  // sky's actually started turning, whatever pickup count that took.
   // A ghuul actually closing in still pushes dread up regardless (real
   // threat, not ambient atmosphere), indoors or out.
-  if(state.started && state.skyEventTriggered && !state.insideSafehouse) state.forgetting = Math.min(1, state.forgetting + dt*0.006); // reverted from 0.009 - "extreme atmosphere" pass made dread build too fast after reaching the relay tower
+  if(state.started && state.skyWrongness > 0.05 && !state.insideSafehouse) state.forgetting = Math.min(1, state.forgetting + dt*0.006); // reverted from 0.009 - "extreme atmosphere" pass made dread build too fast once the sky starts turning
   const target = Math.max(proximityTarget, state.forgetting, state.stormDreadBoost);
   state.dread += (target-state.dread)*dt*1.2;
 
