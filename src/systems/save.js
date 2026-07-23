@@ -75,7 +75,6 @@ export function writeSave(indicatorLabel){
       minimapUnlocked: state.minimapUnlocked, dread: state.dread,
       sanity: state.sanity, forgetting: state.forgetting,
       elapsed: state.elapsed, skyWrongness: state.skyWrongness,
-      skyEventTriggered: state.skyEventTriggered, skyEventClock: state.skyEventClock,
       radioLog: state.radioLog,
       notebookEntriesShown: state.notebookEntriesShown,
       triedLockedDoor: state.triedLockedDoor, doorKeyStatus: state.doorKeyStatus,
