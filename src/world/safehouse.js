@@ -992,6 +992,29 @@ function buildSafehouse(){
   radioDeskLight.position.set(SAFEHOUSE_HALF_W-1.5, 1.9, SAFEHOUSE_HALF_D-1.5);
   group.add(radioDeskLight);
 
+  // Interior is a small, fixed, enclosed space (unlike the streamed
+  // exterior world), so a full traverse is affordable here - skip only
+  // additive-blended glow sprites and fully-transparent panes, since a
+  // soft light-blob or a glass pane casting a hard rectangular shadow
+  // silhouette would look wrong, not better.
+  group.traverse(o=>{
+    if(o.isMesh && o.material){
+      const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+      o.castShadow = !mat.transparent;
+      o.receiveShadow = true;
+    }
+  });
+  // Point-light shadows are a real per-light cost (cubemap render, not a
+  // single pass like the directional moonlight), so only the two lamps
+  // actually worth it get one - the room's main reading-lamp-style
+  // sources, where a lamp visibly throwing furniture shadows across the
+  // wall sells "real light" the most. The rest of the room's small glow
+  // sources (storage, etc.) stay shadow-free.
+  bedLamp.castShadow = true;
+  bedLamp.shadow.mapSize.set(512, 512);
+  radioDeskLight.castShadow = true;
+  radioDeskLight.shadow.mapSize.set(512, 512);
+
   return group;
 }
 
@@ -1063,6 +1086,16 @@ function buildSafehouseExterior(){
   doorLight.position.set(0, 1.6, -EXT_HALF_D+0.3);
   group.add(doorLight);
   addGlow(group, 0xffb877, 1.2, 0.55).position.copy(doorLight.position);
+
+  // Same reasoning as buildSafehouse() above - one fixed instance, cheap
+  // to traverse, skip only transparent/glow meshes.
+  group.traverse(o=>{
+    if(o.isMesh && o.material){
+      const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+      o.castShadow = !mat.transparent;
+      o.receiveShadow = true;
+    }
+  });
 
   return group;
 }
