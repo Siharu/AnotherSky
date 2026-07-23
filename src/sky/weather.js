@@ -752,18 +752,30 @@ function updateDust(dt){
   dustGeo.attributes.position.needsUpdate = true;
 }
 
-// HUD weather label support: counts how many squall cells are currently
-// drifting near the player (rainCellX/Z are already player-relative - see
-// updateRain above) rather than reading any authored "weather state",
-// since none exists in this file. Fuzzy by nature (a read of what's
-// actually rendering, not a designed intensity level) - see
-// docs/HANDOFF.md's weather-label entry for the tradeoff.
-export function getNearbySquallCount(radius=14){
+// HUD weather label support: counts how many squall cells are actually
+// raining on the player right now (rainCellX/Z are already player-relative
+// - see updateRain above), rather than reading any authored "weather
+// state", since none exists in this file. Checks each cell's own patch
+// radius (rainCellR, up to ~20) instead of a fixed cutoff - a fixed radius
+// smaller than a cell's patch meant a wide cell centered just past that
+// cutoff was still visibly raining on the player while the label read
+// CLEAR. See docs/HANDOFF.md's weather-label entry for the tradeoff.
+export function getNearbySquallCount(){
   let n = 0;
   for(let c=0;c<RAIN_CELL_COUNT;c++){
-    if(Math.hypot(rainCellX[c], rainCellZ[c]) < radius) n++;
+    if(Math.hypot(rainCellX[c], rainCellZ[c]) < rainCellR[c]) n++;
   }
   return n;
+}
+
+// Particle-density accessibility/perf lever (see systems/settings.js).
+// setDrawRange limits how many of the RAIN_COUNT vertices actually get
+// rasterized without touching the simulation above at all - drops
+// outside the range are still updated every frame (cheap, just math on
+// a typed array) but never drawn, so density can be flipped instantly
+// with no buffer rebuild and no visible pop in the drops that remain.
+export function setRainDensity(density){
+  rainGeo.setDrawRange(0, Math.round(RAIN_COUNT*Math.max(0, Math.min(1, density))));
 }
 
 export { cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat, rain, farRain, dust, updateRain, updateDust };
