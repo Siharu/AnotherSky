@@ -120,9 +120,17 @@ function* loadChunkSteps(cx,cz){
   }
   if(rand() < 0.7){
     const lx = centerX + (rand()-0.5)*CHUNK_SIZE, lz = centerZ + (rand()-0.5)*CHUNK_SIZE;
-    const handle = addLamp(lx, lz);
-    entry.handles.push({ type:'lamp', handle });
-    yield;
+    // buildings/ruins above all check footprints before placing - this
+    // didn't, so a lamp pole could land inside a building/ruin that had
+    // just been placed in this same chunk a moment earlier.
+    const overlapsFootprint = footprints.some(f =>
+      Math.abs(lx-f.x) < f.hw+0.6 && Math.abs(lz-f.z) < f.hd+0.6
+    );
+    if(!overlapsFootprint){
+      const handle = addLamp(lx, lz);
+      entry.handles.push({ type:'lamp', handle });
+      yield;
+    }
   }
   if(rand() < 0.12){
     const lx = centerX + (rand()-0.5)*CHUNK_SIZE, lz = centerZ + (rand()-0.5)*CHUNK_SIZE;
