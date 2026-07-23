@@ -62,6 +62,10 @@ function skyColorsAt(t){
 }
 
 /* ---------- SKY ---------- */
+// Module-scope (not block-scoped like before) so the actual moon disc below
+// can be placed along the same direction as the dome's light trace instead
+// of duplicating/guessing the vector.
+const MOON_DIR = new THREE.Vector3(-60, 140, -40).normalize();
 let domeMat;
 let domeMesh;
 {
@@ -69,7 +73,7 @@ let domeMesh;
   const { top, mid, horizon } = skyColorsAt(0); // start on the calm grey sky
   // same direction as moonLight.position - a real light source should leave
   // a visible trace in the sky it's coming from, not just light the ground.
-  const moonDir = new THREE.Vector3(-60, 140, -40).normalize();
+  const moonDir = MOON_DIR;
   domeMat = new THREE.ShaderMaterial({
     uniforms: {
       uTop: { value: top },
@@ -225,7 +229,80 @@ let starPoints, starMat;
     `
   });
   starPoints = new THREE.Points(starGeo, starMat);
+  // Transparent objects in three.js sort back-to-front by distance, not by
+  // a depth test - which meant on some frames the stars (sitting on a
+  // r=390 sphere) sorted "in front of" the hole plane (sitting at a much
+  // closer, fixed y=150) and painted straight through its supposedly-opaque
+  // event horizon. renderOrder forces draw order regardless of distance:
+  // stars first, hole after, so the hole's alpha=1 core always wins.
+  starPoints.renderOrder = 0;
   scene.add(starPoints);
+}
+
+/* ---------- THE MOON ---------- */
+// Previously there was only an implied light source (moonLight + the dome's
+// uSunDir glow trace) - no actual body in the sky, so on a clear night there
+// was nothing up there to look at, and no visible object for the black hole
+// to read as having consumed once wrongness climbs. This is a real billboard
+// disc along MOON_DIR, canvas-drawn (soft core, feathered edge, faint craterish
+// mottling so it doesn't read as a flat CG circle), that fades out as
+// uWrongness rises - by the time the hole is fully dominant the moon is gone,
+// so the hole reads as having eaten it rather than the two just coexisting.
+let moonMesh, moonMat;
+{
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const cx = size/2, cy = size/2, r = size*0.42;
+  const grad = ctx.createRadialGradient(cx-r*0.15, cy-r*0.15, r*0.05, cx, cy, r);
+  grad.addColorStop(0.0, 'rgba(255,250,240,1)');
+  grad.addColorStop(0.55, 'rgba(232,224,208,0.95)');
+  grad.addColorStop(0.85, 'rgba(190,182,168,0.55)');
+  grad.addColorStop(1.0, 'rgba(190,182,168,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+  // a few soft mottled patches so it isn't a flat disc
+  ctx.globalCompositeOperation = 'multiply';
+  const rng = mulberry32Local(7);
+  for(let i=0;i<10;i++){
+    const a = rng()*Math.PI*2, d = rng()*r*0.65;
+    const px = cx + Math.cos(a)*d, py = cy + Math.sin(a)*d;
+    const pr = r*(0.08+rng()*0.16);
+    const pg = ctx.createRadialGradient(px,py,0,px,py,pr);
+    pg.addColorStop(0, 'rgba(160,155,150,0.35)');
+    pg.addColorStop(1, 'rgba(160,155,150,0)');
+    ctx.fillStyle = pg;
+    ctx.beginPath(); ctx.arc(px,py,pr,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  // wide soft halo beyond the disc itself
+  const haloGrad = ctx.createRadialGradient(cx,cy,r*0.9,cx,cy,r*1.9);
+  haloGrad.addColorStop(0, 'rgba(230,225,215,0.18)');
+  haloGrad.addColorStop(1, 'rgba(230,225,215,0)');
+  ctx.fillStyle = haloGrad;
+  ctx.beginPath(); ctx.arc(cx,cy,r*1.9,0,Math.PI*2); ctx.fill();
+
+  const moonTex = new THREE.CanvasTexture(canvas);
+  moonMat = new THREE.SpriteMaterial({
+    map: moonTex, transparent: true, depthWrite: false,
+    opacity: 1, fog: false
+  });
+  moonMesh = new THREE.Sprite(moonMat);
+  const moonDist = 370;
+  moonMesh.position.copy(MOON_DIR).multiplyScalar(moonDist);
+  moonMesh.scale.set(34, 34, 1);
+  moonMesh.renderOrder = 1; // after stars, before/with the hole depending on distance - it's meant to visually sit near the hole once wrongness climbs
+  scene.add(moonMesh);
+}
+function mulberry32Local(seed){
+  let a = seed;
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 /* ---------- THE HOLE (an animated black hole, directly overhead) ---------- */
@@ -274,8 +351,19 @@ const holeFragmentShader = `
 
     void main(){
       vec2 p = vUv - 0.5;
-      float radius = length(p) * 2.0;
-      float angle = atan(p.y, p.x);
+      // A perfectly circular disk reads as a flat 2D hole cut in the sky
+      // texture, not a 3D object with mass. Squashing it into an ellipse
+      // (viewed "from the side," same idea as the tilted ring in
+      // Interstellar) is what actually sells "sphere with a disk of matter
+      // wrapped around it" instead of "circular hole." Only the disk/glow
+      // read gets squashed - the event horizon itself stays a true circle
+      // (a black hole's shadow is circular regardless of viewing angle;
+      // it's the disk around it that reads as an ellipse), so it still
+      // silhouettes as a sphere up close.
+      vec2 pDisk = vec2(p.x, p.y / 0.55);
+      float radiusCore = length(p) * 2.0;
+      float radius = length(pDisk) * 2.0;
+      float angle = atan(pDisk.y, pDisk.x);
 
       float horizon = 0.09 + uDread*0.03;
       float diskOuter = 0.44;
@@ -283,8 +371,8 @@ const holeFragmentShader = `
       vec3 col = vec3(0.0);
       float alpha = 0.0;
 
-      if(radius < horizon){
-        // event horizon - true black, fully opaque
+      if(radiusCore < horizon){
+        // event horizon - true black, fully opaque, true circle (see note above)
         col = vec3(0.0);
         alpha = 1.0;
       } else if(radius < diskOuter){
@@ -348,6 +436,17 @@ const holeFragmentShader = `
         glow *= 1.0 - smoothstep(0.35, 0.55, radius);
         col = mix(vec3(0.30,0.10,0.23), vec3(0.07,0.03,0.10), glow);
         alpha = glow * (0.14 + uDread*0.08); // was set twice (a dead 0.07+uDread*0.04 line above it, immediately overwritten) - the actually-used value is this one
+
+        // Wide, low-opacity dark pull reaching well past the glow above -
+        // without this the hole just sat inside its own little pink smudge
+        // and everything past that read as untouched sky, which is what
+        // made the whole thing look like a hole cut in fabric rather than
+        // a mass warping the space around it. This darkens a much bigger
+        // radius at very low alpha so it reads as gravity dragging at the
+        // surrounding sky, not a hard-edged sticker.
+        float farPull = 1.0 - smoothstep(0.35, 1.35, radius);
+        alpha = max(alpha, farPull * farPull * (0.05 + uWrongness*0.10));
+        col = mix(col, vec3(0.02,0.01,0.03), farPull);
       }
 
       // Only the accretion-disk/halo DETAIL ramps in with wrongness - the
@@ -358,7 +457,7 @@ const holeFragmentShader = `
       // the whole hole reads as a flat, barely-there grey smudge at low
       // wrongness instead of an actual black silhouette with color/motion
       // ramping in on top of it as things get worse.
-      if(radius >= horizon){
+      if(radiusCore >= horizon){
         alpha *= mix(0.06, 1.0, smoothstep(0.15, 0.7, uWrongness));
       }
 
@@ -376,6 +475,7 @@ let holeMesh;
 {
   holeMesh = new THREE.Mesh(new THREE.PlaneGeometry(240,240), holeMaterial);
   holeMesh.position.y = 150;
+  holeMesh.renderOrder = 10; // see starPoints.renderOrder comment above
   scene.add(holeMesh);
 }
 
@@ -716,7 +816,7 @@ function jitterAt(seed, t){
 export {
   skyGradientColors, skyGradientColorsCalm, SKY_CALM, SKY_WRONG, skyColorsAt,
   domeMat, domeMesh,
-  starPoints, starMat,
+  starPoints, starMat, moonMesh, moonMat,
   holeUniforms, holeMaterial, holeMesh, createHoleMaterial,
   MONOLITH_BEARING, MONOLITH_DIST, monolithMat, monolithMesh,
   monolithGlowMat, monolithGlowMesh,
