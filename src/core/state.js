@@ -40,6 +40,7 @@ const state = {
   collected: new Set(),
   nearOrbId: -1,
   muted:false,
+  autosaveEnabled:true,
   portraitBlocked:false,
   /* systemic layer additions */
   noise: 0,                 // 0..1, derived from movement magnitude, drives ghuul hearing
