@@ -36,7 +36,7 @@ export const NOTEBOOK_ENTRIES = [
     text: "Found something with just a single letter on it. \"S.\" No name attached, like the rest of it got left out on purpose, or got erased right down to the initial and stopped there." },
   { id:9, condition: (s) => s.collected.has(10),
     text: "Nine people, gone from a story that still has a Som-shaped hole in it where they used to be. I remember exactly where each of them used to stand in that room, which is a strange thing to remember about nine people I apparently never met." },
-  { id:10, condition: (s) => !!s.skyEventTriggered,
+  { id:10, condition: (s) => s.skyWrongness >= 0.95,
     text: "The sky did something today that I don't have a word for. Not a storm. More like being watched by something that finally stopped pretending it wasn't looking." },
   { id:11, condition: (s) => !!s.returnCueShown,
     text: "The radio said something back to me tonight - my own last line, word for word, in my own voice, like it had been saving it up to see if I'd notice. I noticed. I'm choosing to write that down instead of thinking about it further." },
