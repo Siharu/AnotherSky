@@ -28,6 +28,7 @@ import { getMasterGain } from './audio.js';
 import { deleteSave } from './save.js';
 import { hubOverlay } from '../ui/menu.js';
 import { setGrassQuality } from '../world/grass.js';
+import { setRainDensity } from '../sky/weather.js';
 
 const $ = id => document.getElementById(id);
 
@@ -58,6 +59,12 @@ export let settingsShadows = true;
 // the audio graph. Flagging this here rather than quietly faking it.
 export let settingsMusicVolume = 0.4;
 export let settingsSfxVolume = 0.7;
+// Accessibility/comfort additions. All plain persisted values, same
+// shape as everything above - no new subsystem, just more entries in
+// the same load/save round-trip.
+export let settingsDialogueOpacity = 0.6; // background box behind #whisper/#interact-prompt text, 0=none (old behavior) - 1=solid
+export let settingsReduceFlash = false; // photosensitivity: suppresses the lightning screen-flash/bolt entirely (see main.js's triggerLightning) rather than just dimming it - a dimmed flash is still a flash
+export let settingsParticleDensity = 1; // 0..1, scales visible rain drop count via BufferGeometry.setDrawRange (see sky/weather.js) - cheaper lever than remaking the buffers at a smaller size
 
 export function applyResolution(){
   renderer.setPixelRatio(baseDPR * settingsResScale);
@@ -77,6 +84,22 @@ export function applyShadows(){
   renderer.shadowMap.enabled = settingsShadows;
 }
 
+// #whisper/#interact-prompt text has no background box by default (see
+// index.html's CSS) - readable against dark scenes but not against a
+// bright sky or the flash effects. Applies a dark box behind both at
+// the chosen strength; 0 keeps the old no-box look exactly.
+function applyDialogueOpacity(){
+  const whisper = $('whisper');
+  const prompt = $('interact-prompt');
+  const bg = `rgba(10,8,8,${settingsDialogueOpacity*0.75})`;
+  if(whisper) whisper.style.background = settingsDialogueOpacity>0 ? bg : 'none';
+  if(prompt) prompt.style.background = settingsDialogueOpacity>0 ? bg : 'rgba(0,0,0,0.5)'; // 0.5 is the panel's own original default, not "off"
+}
+
+function applyParticleDensity(){
+  setRainDensity(settingsParticleDensity);
+}
+
 (function loadSettings(){
   try{
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -92,17 +115,25 @@ export function applyShadows(){
       if(typeof s.vibration === 'boolean') settingsVibration = s.vibration;
       if(typeof s.shadows === 'boolean') settingsShadows = s.shadows;
       if(typeof s.muted === 'boolean') state.muted = s.muted;
+      if(typeof s.autosave === 'boolean') state.autosaveEnabled = s.autosave;
+      if(typeof s.dialogueOpacity === 'number') settingsDialogueOpacity = s.dialogueOpacity;
+      if(typeof s.reduceFlash === 'boolean') settingsReduceFlash = s.reduceFlash;
+      if(typeof s.particleDensity === 'number') settingsParticleDensity = s.particleDensity;
     }
   }catch(e){}
   applyResolution();
   applyShadows();
+  applyDialogueOpacity();
+  applyParticleDensity();
 })();
 
 export function saveSettings(){
   try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify({
     sens:settingsSensMult, vol:userVolume, music:settingsMusicVolume, sfx:settingsSfxVolume,
     bright:settingsBrightness, res:settingsResScale,
-    invertY:settingsInvertY, vibration:settingsVibration, shadows:settingsShadows, muted:state.muted
+    invertY:settingsInvertY, vibration:settingsVibration, shadows:settingsShadows, muted:state.muted,
+    autosave:state.autosaveEnabled, dialogueOpacity:settingsDialogueOpacity,
+    reduceFlash:settingsReduceFlash, particleDensity:settingsParticleDensity
   })); }catch(e){}
 }
 
@@ -141,6 +172,10 @@ const settingsMusic = $('settings-music');
 const settingsMusicVal = $('settings-music-val');
 const settingsSfx = $('settings-sfx');
 const settingsSfxVal = $('settings-sfx-val');
+const settingsDialogueOpacityEl = $('settings-dialogue-opacity');
+const settingsDialogueOpacityVal = $('settings-dialogue-opacity-val');
+const settingsParticleDensityEl = $('settings-particle-density');
+const settingsParticleDensityVal = $('settings-particle-density-val');
 settingsSens.value = Math.round(settingsSensMult*100);
 settingsSensVal.textContent = Math.round(settingsSensMult*100) + '%';
 settingsVol.value = Math.round(userVolume*100);
@@ -151,11 +186,17 @@ settingsMusic.value = Math.round(settingsMusicVolume*100);
 settingsMusicVal.textContent = Math.round(settingsMusicVolume*100) + '%';
 settingsSfx.value = Math.round(settingsSfxVolume*100);
 settingsSfxVal.textContent = Math.round(settingsSfxVolume*100) + '%';
+settingsDialogueOpacityEl.value = Math.round(settingsDialogueOpacity*100);
+settingsDialogueOpacityVal.textContent = Math.round(settingsDialogueOpacity*100) + '%';
+settingsParticleDensityEl.value = Math.round(settingsParticleDensity*100);
+settingsParticleDensityVal.textContent = Math.round(settingsParticleDensity*100) + '%';
 updateSliderVisual(settingsSens);
 updateSliderVisual(settingsVol);
 updateSliderVisual(settingsBright);
 updateSliderVisual(settingsMusic);
 updateSliderVisual(settingsSfx);
+updateSliderVisual(settingsDialogueOpacityEl);
+updateSliderVisual(settingsParticleDensityEl);
 applyBrightness();
 
 const settingsRes = $('settings-res');
@@ -197,6 +238,20 @@ settingsSfx.addEventListener('input', ()=>{
   updateSliderVisual(settingsSfx);
   saveSettings();
 });
+settingsDialogueOpacityEl.addEventListener('input', ()=>{
+  settingsDialogueOpacity = settingsDialogueOpacityEl.value/100;
+  settingsDialogueOpacityVal.textContent = settingsDialogueOpacityEl.value + '%';
+  updateSliderVisual(settingsDialogueOpacityEl);
+  applyDialogueOpacity();
+  saveSettings();
+});
+settingsParticleDensityEl.addEventListener('input', ()=>{
+  settingsParticleDensity = settingsParticleDensityEl.value/100;
+  settingsParticleDensityVal.textContent = settingsParticleDensityEl.value + '%';
+  updateSliderVisual(settingsParticleDensityEl);
+  applyParticleDensity();
+  saveSettings();
+});
 
 // ---------- MUTE / INVERT-Y / VIBRATION ----------
 // All three read from state that already exists and is already checked
@@ -209,10 +264,14 @@ const settingsMute = $('settings-mute');
 const settingsInvertYEl = $('settings-invert-y');
 const settingsVibrationEl = $('settings-vibration');
 const settingsShadowsEl = $('settings-shadows');
+const settingsAutosaveEl = $('settings-autosave');
+const settingsReduceFlashEl = $('settings-reduce-flash');
 settingsMute.checked = state.muted;
 settingsInvertYEl.checked = settingsInvertY;
 settingsVibrationEl.checked = settingsVibration;
 settingsShadowsEl.checked = settingsShadows;
+settingsAutosaveEl.checked = state.autosaveEnabled;
+settingsReduceFlashEl.checked = settingsReduceFlash;
 settingsMute.addEventListener('change', ()=>{
   state.muted = settingsMute.checked;
   const mg = getMasterGain();
@@ -230,6 +289,18 @@ settingsVibrationEl.addEventListener('change', ()=>{
 settingsShadowsEl.addEventListener('change', ()=>{
   settingsShadows = settingsShadowsEl.checked;
   applyShadows();
+  saveSettings();
+});
+settingsAutosaveEl.addEventListener('change', ()=>{
+  // Only gates the periodic timer tick (see systems/save.js's
+  // tickAutosave) - checkpoint/pickup saves elsewhere in main.js keep
+  // firing regardless, same as deleteSave()'s comment above notes for
+  // why those can't be silently skipped.
+  state.autosaveEnabled = settingsAutosaveEl.checked;
+  saveSettings();
+});
+settingsReduceFlashEl.addEventListener('change', ()=>{
+  settingsReduceFlash = settingsReduceFlashEl.checked;
   saveSettings();
 });
 
