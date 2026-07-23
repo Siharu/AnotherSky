@@ -69,7 +69,7 @@ export function registerPlayerRefs(refs){
   updateRadioTower = refs.updateRadioTower;
 }
 
-let lastStepPhase = -1;
+let nextStepThreshold = Math.PI;
 
 export function updatePlayer(dt){
   let mx = state.moveJoystick.x + (keys['KeyD']||keys['ArrowRight']?1:0) - (keys['KeyA']||keys['ArrowLeft']?1:0);
@@ -109,12 +109,16 @@ export function updatePlayer(dt){
   updateFowAt(state.playerX, state.playerZ);
 
   if(moving) state.walkTime += dt*7.5;
-  if(moving){
-    const stepPhase = Math.floor(state.walkTime/Math.PI);
-    if(stepPhase !== lastStepPhase){
-      lastStepPhase = stepPhase;
-      playWetFootstep();
-    }
+  if(moving && state.walkTime >= nextStepThreshold){
+    // was floor(walkTime/PI) !== lastStepPhase - since walkTime always
+    // advances at the same fixed dt*7.5 rate, that made the real-world
+    // gap between footstep sounds exactly PI/7.5s every single time,
+    // forever - a perfect metronome, not footsteps. Jittering the next
+    // threshold instead (rather than jittering walkTime's rate itself,
+    // which would also stutter the bob animation below - it reads the
+    // same walkTime) gives natural stride variance to the SOUND only.
+    nextStepThreshold += Math.PI * (0.88 + Math.random()*0.24);
+    playWetFootstep();
   }
   const bob = moving ? Math.sin(state.walkTime)*0.045 : 0;
   // violent shaking once forgetting has taken hold, on top of the base
