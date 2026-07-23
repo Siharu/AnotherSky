@@ -45,7 +45,7 @@ import {
 } from './entities/ghuuls.js';
 import {
   getAudioCtx, ensureAudioCtx, getMasterGain, getWindGain, getInteriorGain,
-  initAudio, tickHeartbeat,
+  initAudio, tickHeartbeat, tickAmbienceMix,
   playStinger, playThunder, playFakeFootstep, playWetFootstep,
   playAnimalCall, playBreath
 } from './systems/audio.js';
@@ -3271,6 +3271,7 @@ function animate(){
     updateOrbs(dt);
     updateExitBlackout(dt);
     updateRain(dt);
+    tickAmbienceMix(dt);
     updateWeatherLabel();
     updateDust(dt);
     updateAsh(dt);
