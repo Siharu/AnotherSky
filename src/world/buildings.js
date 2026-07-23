@@ -228,11 +228,22 @@ function addBuilding(x,z,w,d,h,opts){
   const body = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), wallMat);
   body.position.y = h/2;
   body.rotation.z = lean;
+  // Only the silhouette layer (body/base) casts/receives - same LOD
+  // split as detailGroup below, just applied to shadows instead of
+  // visibility. Every facade window, door frame, and roof greeble
+  // casting its own shadow across a whole streamed city would be a real
+  // per-chunk cost for detail nobody would actually notice the shadow
+  // of at typical viewing distance - the big wall/base blocks are what
+  // actually read as "this building is blocking the light."
+  body.castShadow = true;
+  body.receiveShadow = true;
   group.add(body);
 
   const baseH = Math.min(3.2, h*0.22);
   const base = new THREE.Mesh(new THREE.BoxGeometry(w+0.16,baseH,d+0.16), buildingDarkMat);
   base.position.y = baseH/2;
+  base.castShadow = true;
+  base.receiveShadow = true;
   group.add(base);
 
   // ---------- LOD: fine detail vs. silhouette ----------
