@@ -245,6 +245,43 @@ scene.add(skyLight);
 const moonLight = new THREE.DirectionalLight(0x8fa8c8, 0.9);
 moonLight.position.set(-60, 140, -40);
 scene.add(moonLight);
+// Directional-light shadows use an orthographic frustum, not a cone - fine
+// for a small fixed scene, but this world streams infinitely around the
+// player, so a frustum sized to cover the whole map would spread the
+// shadow map's fixed pixel resolution across a huge area and come out
+// blocky/useless. Instead the frustum stays a modest fixed size (just
+// past draw-distance for nearby buildings) and moonLight + its target get
+// re-centered on the player every frame in updateShadowCamera() below -
+// same trick as a lot of open-world engines use for a single "sun" caster.
+// castShadow itself and this frustum setup stay in place regardless of
+// the settings toggle - see systems/settings.js's applyShadows(), which
+// flips renderer.shadowMap.enabled instead. Three.js skips the whole
+// shadow render pass when that's off, so there's no separate on/off
+// bookkeeping needed here.
+moonLight.castShadow = true;
+moonLight.shadow.mapSize.set(1536, 1536);
+moonLight.shadow.camera.near = 20;
+moonLight.shadow.camera.far = 280;
+moonLight.shadow.camera.left = -70;
+moonLight.shadow.camera.right = 70;
+moonLight.shadow.camera.top = 70;
+moonLight.shadow.camera.bottom = -70;
+moonLight.shadow.bias = -0.0015;
+moonLight.shadow.normalBias = 0.02;
+scene.add(moonLight.target);
+const MOON_LIGHT_OFFSET = new THREE.Vector3(-60, 140, -40).normalize();
+function updateShadowCamera(){
+  // keeps the light's relative direction/height fixed (same offset as its
+  // original static position) while sliding the whole light+target pair
+  // to stay centered on wherever the player currently is
+  const dist = 150;
+  moonLight.position.set(
+    state.playerX + MOON_LIGHT_OFFSET.x*dist,
+    MOON_LIGHT_OFFSET.y*dist,
+    state.playerZ + MOON_LIGHT_OFFSET.z*dist
+  );
+  moonLight.target.position.set(state.playerX, 0, state.playerZ);
+}
 
 /* meltUniform/patchFogAndMelt moved to render/postprocessing.js this
    round; addLamp() moved to world/props.js - both imported at true
@@ -269,6 +306,7 @@ const groundMat = new THREE.MeshToonMaterial({
 patchFogToDistance(groundMat);
 const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.position.y = 0;
+ground.receiveShadow = true;
 scene.add(ground);
 
 // far skirt: a second, larger dark plane beyond the detailed ground so the
@@ -287,8 +325,122 @@ initGrass();
 
 /* ---------- LIGHTNING ---------- */
 const lightningEl = document.getElementById('lightning-flash');
+const boltCanvas = document.getElementById('lightning-bolt-canvas');
+const boltCtx = boltCanvas.getContext('2d');
+let boltDPR = Math.min(window.devicePixelRatio||1, 2);
+function sizeBoltCanvas(){
+  boltDPR = Math.min(window.devicePixelRatio||1, 2);
+  boltCanvas.width = window.innerWidth * boltDPR;
+  boltCanvas.height = window.innerHeight * boltDPR;
+  boltCtx.setTransform(boltDPR, 0, 0, boltDPR, 0, 0);
+}
+sizeBoltCanvas();
+// Midpoint-displacement bolt path: start with a single straight segment,
+// then repeatedly split every segment in half and kick its new midpoint
+// sideways by a random amount - real lightning-generator technique, not
+// hand-authored zigzag points, so every strike comes out a different
+// jagged shape. Displacement shrinks each pass (halved) so early passes
+// set the bolt's big overall kinks and later passes add fine jitter on
+// top, the same large-to-small structure real fractal lightning has.
+function midpointDisplace(x0,y0,x1,y1,iterations,roughness){
+  let pts = [{x:x0,y:y0},{x:x1,y:y1}];
+  let disp = Math.hypot(x1-x0,y1-y0) * roughness;
+  for(let it=0; it<iterations; it++){
+    const next = [pts[0]];
+    for(let i=0;i<pts.length-1;i++){
+      const a = pts[i], b = pts[i+1];
+      const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+      // perpendicular to the segment, so the kink pushes sideways off
+      // the bolt's own direction rather than always along one world axis
+      const dx = b.x-a.x, dy = b.y-a.y;
+      const len = Math.hypot(dx,dy) || 1;
+      const px = -dy/len, py = dx/len;
+      const kick = (Math.random()-0.5) * 2 * disp;
+      next.push({x: mx + px*kick, y: my + py*kick});
+      next.push(b);
+    }
+    pts = next;
+    disp *= 0.55;
+  }
+  return pts;
+}
+function strokePath(ctx, pts, width, color, blur){
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.lineWidth = width;
+  ctx.strokeStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+}
+// Draws one full strike: a main bolt from high in the sky partway down
+// the screen, plus a handful of shorter forking branches peeling off at
+// random points along it - the "spark" look real lightning has, not a
+// single clean line. Two-pass stroke per segment (wide soft glow underneath,
+// thin bright core on top) is what actually sells "electric" rather than
+// "painted crack" - a single-width stroke reads flat no matter the color.
+function spawnLightningBolt(){
+  sizeBoltCanvas();
+  const w = window.innerWidth, h = window.innerHeight;
+  boltCtx.clearRect(0,0,w,h);
+  boltCtx.globalCompositeOperation = 'lighter'; // branches/glow passes add light rather than overpainting each other's soft edges
+  const startX = w*(0.25 + Math.random()*0.5);
+  const startY = -h*0.02;
+  const endX = startX + (Math.random()-0.5)*w*0.35;
+  const endY = h*(0.32 + Math.random()*0.28); // doesn't reach the ground - reads as striking down into the cloud layer/distance, matching the dome sky rather than a literal ground strike
+  const main = midpointDisplace(startX, startY, endX, endY, 6, 0.55);
+
+  const coreColor = 'rgba(232,238,255,1)';
+  const glowColor = 'rgba(150,180,255,0.9)';
+  strokePath(boltCtx, main, 9, glowColor, 26);
+  strokePath(boltCtx, main, 2.4, coreColor, 10);
+
+  // branches: pick a few points partway along the main bolt (favoring
+  // the upper half, same as real strikes - branches thin out toward the
+  // bottom) and grow a shorter, thinner offshoot from each
+  const branchCount = 2 + Math.floor(Math.random()*3);
+  for(let b=0; b<branchCount; b++){
+    const t = 0.15 + Math.random()*0.55;
+    const idx = Math.min(main.length-1, Math.floor(t*main.length));
+    const origin = main[idx];
+    const ang = (Math.random()-0.5)*1.4 + Math.PI/2; // roughly downward-ish, wide spread
+    const blen = h*(0.06 + Math.random()*0.12);
+    const bx = origin.x + Math.cos(ang)*blen;
+    const by = origin.y + Math.sin(ang)*blen;
+    const branch = midpointDisplace(origin.x, origin.y, bx, by, 4, 0.5);
+    strokePath(boltCtx, branch, 4, glowColor, 14);
+    strokePath(boltCtx, branch, 1.2, coreColor, 6);
+  }
+  boltCtx.globalCompositeOperation = 'source-over';
+
+  // same two-pulse timing as the flash div (triggerLightning below) so
+  // the bolt shape and the ambient screen brighten read as one event
+  boltCanvas.style.transition = 'none';
+  boltCanvas.style.opacity = 1;
+  requestAnimationFrame(()=>{
+    boltCanvas.style.transition = 'opacity 0.1s ease';
+    boltCanvas.style.opacity = 0;
+  });
+  setTimeout(()=>{
+    boltCanvas.style.transition = 'none';
+    boltCanvas.style.opacity = 0.55 + Math.random()*0.2;
+    requestAnimationFrame(()=>{
+      boltCanvas.style.transition = 'opacity 0.25s ease';
+      boltCanvas.style.opacity = 0;
+    });
+  }, 90 + Math.random()*40);
+  // clear the actual pixels once fully faded - an opacity:0 canvas still
+  // holds its last-drawn frame, so without this the *next* strike's
+  // fade-in would start by briefly flashing this one's leftover shape
+  // for a frame before spawnLightningBolt() clears and redraws.
+  setTimeout(()=>{ boltCtx.clearRect(0,0,w,h); }, 700);
+}
 let lightningTimer = 6;
 function triggerLightning(){
+  spawnLightningBolt();
   // Was strength 0.55-0.95 on a flat, non-blended white layer - that
   // combination is what actually hurt to look at (see the CSS comment on
   // #lightning-flash). With mix-blend-mode:screen now doing the actual
@@ -559,15 +711,13 @@ const eyeState = Object.assign({
      back to the ambient single-hole sky, leaving stormDreadBoost decaying) */
 const EYE_STORM_COUNT = 10;
 // Used to be a flat 5-minutes-since-boot clock, firing at the same
-// instant whether the player had reached the tower and the sky was
-// already most of the way curdled, or they were still stuck near spawn
-// and skyEventTriggered hadn't even flipped on yet - the storm could (and
-// did) go off before the event it's supposed to be the climax of had
-// meaningfully started. Tied to skyWrongness instead: it's the payoff
-// beat for the curdle, so it should fire once the curdle's actually most
-// of the way there, whenever that happens to land for this particular
-// playthrough (fast tower rush vs. slow exploration both get a storm
-// that reads as earned rather than scheduled).
+// instant regardless of how far along the sky curdle actually was - the
+// storm could (and did) go off before the event it's supposed to be the
+// climax of had meaningfully started. Tied to skyWrongness instead: it's
+// the payoff beat for the curdle, so it fires once the sky's actually
+// most of the way to full "chaos" (the pickup-driven plateau in
+// targetSkyWrongness() above updateSky()), whenever that happens to land
+// for this particular playthrough.
 const EYE_STORM_WRONGNESS_THRESHOLD = 0.8;
 let eyeStormFired = false;
 let eyeStormFiredAt = 0;   // state.elapsed at the moment the storm actually fired - since that no longer happens at a predictable fixed time, anything wanting "how long ago did the storm fire" needs the real timestamp, not a constant
@@ -2249,8 +2399,6 @@ function restoreFromSave(save){
   state.dread = save.dread||0; state.sanity = save.sanity!=null?save.sanity:1;
   state.forgetting = save.forgetting||0; state.elapsed = save.elapsed||0;
   state.skyWrongness = save.skyWrongness||0;
-  state.skyEventTriggered = !!save.skyEventTriggered;
-  state.skyEventClock = save.skyEventClock||0;
   state.radioLog = save.radioLog||[];
   state.notebookEntriesShown = save.notebookEntriesShown||[];
   state.triedLockedDoor = !!save.triedLockedDoor;
@@ -3051,6 +3199,7 @@ window.addEventListener('resize', ()=>{
     lastResizeW = window.innerWidth; lastResizeH = window.innerHeight;
     renderer.setPixelRatio(baseDPR * settingsResScale);
     renderer.setSize(window.innerWidth, window.innerHeight);
+    sizeBoltCanvas();
     updateRotateOverlay();
   }, 120);
 });
@@ -3088,6 +3237,7 @@ function animate(){
   if(state.started){
     state.elapsed += dt;
     updatePlayer(dt);
+    updateShadowCamera();
     updateGhuul(dt, playStinger);
     updateOrbs(dt);
     updateExitBlackout(dt);
@@ -3351,23 +3501,44 @@ let skyClock = 0;
 // but that meant the world could start turning wrong before the one event
 // that's supposed to cause it had happened at all, which read as broken
 // rather than atmospheric. Removed - the tower is the only trigger now.
-const SKY_EVENT_RAMP = 240;   // full curdle takes 4 minutes once triggered - was 150s (2.5min), which read as too fast
-const BLEED_DELAY = 15;        // drips start growing this many seconds into the curdle...
-const BLEED_RAMP = 60;         // ...and reach full length over the following minute - was a flat +5min-from-boot offset, totally decoupled from the curdle it's supposed to be part of
+// Was tower-reached -> flat 240s ramp to full wrongness, no matter what
+// else the player did with their time. That's a big step up from the
+// original raw-boot-clock version, but it's still fundamentally a timer:
+// once you hit the tower, the sky curdles on its own schedule whether
+// you're actively engaging with the story or off exploring somewhere
+// else entirely. Replaced with a pickup-driven system instead: the sky
+// stays completely stable (state.skyWrongness eases toward, then holds
+// at, a flat target) until the player has actually collected enough
+// lore (state.collected, the same Set that already tracks orb/notebook
+// pickups and gates the ending). Three flat plateaus, not a slope - "5
+// pickups = stormy" and "10 = chaos" read as real thresholds the player
+// crossed, not a gradual creep they might not even notice happening.
+// No elapsed-since-trigger bookkeeping needed anymore (skyEventClock is
+// gone) - targetSkyWrongness() is a pure function of collected.size,
+// recomputed fresh every frame, and the eased approach to it is driven
+// by dt alone, so it holds rock-stable at whatever plateau you're on for
+// as long as you like, with no clock ticking underneath it.
+const PICKUP_STORM_COUNT = 5;
+const PICKUP_CHAOS_COUNT = 10;
+const SKY_WRONGNESS_STORM_LEVEL = 0.5;
+const SKY_EASE_RATE = 0.045;  // per-second lerp rate toward the target - a deliberately unhurried transition (~20-30s to visibly settle) when a threshold's crossed, not a snap-cut
+function targetSkyWrongness(){
+  const n = state.collected.size;
+  if(n >= PICKUP_CHAOS_COUNT) return 1;
+  if(n >= PICKUP_STORM_COUNT) return SKY_WRONGNESS_STORM_LEVEL;
+  return 0;
+}
 function updateSky(dt){
   skyClock += dt;
   updateEyeStorm(dt);
   updateWindowFigure(dt);
   updateInsightGlimpse(dt);
 
-  if(!state.skyEventTriggered && state.started && state.minimapUnlocked){
-    state.skyEventTriggered = true;
-    state.skyEventClock = 0;
+  if(state.started){
+    const target = targetSkyWrongness();
+    state.skyWrongness += (target - state.skyWrongness) * Math.min(1, dt*SKY_EASE_RATE);
+    if(Math.abs(target - state.skyWrongness) < 0.001) state.skyWrongness = target; // snap the last sliver so it actually settles instead of crawling forever
   }
-  if(state.skyEventTriggered) state.skyEventClock += dt;
-  state.skyWrongness = state.skyEventTriggered
-    ? THREE.MathUtils.clamp(state.skyEventClock/SKY_EVENT_RAMP, 0, 1)
-    : 0;
   if(domeMat){
     const { top, mid, horizon } = skyColorsAt(state.skyWrongness);
     domeMat.uniforms.uTop.value.copy(top);
@@ -3513,13 +3684,15 @@ function updateSky(dt){
   // become an unmistakable pulsing web as dread climbs
   cloudMat.uniforms.uDread.value = state.dread;
   cloudMat2.uniforms.uDread.value = state.dread;
-  // drips start partway into the curdle (BLEED_DELAY) and reach full length
-  // over BLEED_RAMP after that - both relative to skyEventClock now, so they
-  // land inside the same event as the color/melt changes instead of showing
-  // up minutes after the sky's already gone flat and dark.
-  const bleedAmt = state.skyEventTriggered
-    ? THREE.MathUtils.clamp((state.skyEventClock - BLEED_DELAY)/BLEED_RAMP, 0, 1)
-    : 0;
+  // Used to ramp in on its own delay/duration relative to skyEventClock,
+  // separate from skyWrongness itself - a leftover from when the curdle
+  // was a single timed event. Now it's just a function of the current
+  // wrongness level directly, same as everything else in this file: the
+  // veins start appearing partway into the "stormy" plateau (0.5) and
+  // reach full intensity by full "chaos" (1.0), so they hold steady at
+  // whatever the sky's current stage is rather than growing on their own
+  // clock underneath it.
+  const bleedAmt = THREE.MathUtils.clamp((state.skyWrongness - 0.35)/0.5, 0, 1);
   cloudMat.uniforms.uBleed.value = bleedAmt;
   cloudMat2.uniforms.uBleed.value = bleedAmt;
   if(dripMat){ dripMat.uniforms.uBleed.value = bleedAmt; dripMat.uniforms.uWrongness.value = state.skyWrongness; dripMat.uniforms.uTime.value = skyClock; }
