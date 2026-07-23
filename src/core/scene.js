@@ -57,6 +57,11 @@ try{
 }
 renderer.setPixelRatio(baseDPR);
 renderer.setSize(window.innerWidth, window.innerHeight);
+// Type is set here since it's a one-time renderer config, not something
+// that needs toggling - only .shadowMap.enabled itself gets flipped
+// (see systems/settings.js's applyShadows()), which is what actually
+// skips the whole shadow render pass when the player turns shadows off.
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 // Which physical GPU is actually rendering this - not always the one you'd
 // expect. Laptops with hybrid graphics (NVIDIA Optimus etc.) commonly let
