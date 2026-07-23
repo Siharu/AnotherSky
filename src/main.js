@@ -11,7 +11,7 @@ import {
 } from './sky/sky.js';
 import {
   cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat,
-  updateRain, updateDust, updateAsh
+  updateRain, updateDust, updateAsh, getNearbySquallCount
 } from './sky/weather.js';
 import { makeCanvas, patchFogToDistance } from './render/postprocessing.js';
 import { terrainHeight, groundHeightAt } from './world/terrain.js';
@@ -3623,7 +3623,19 @@ function updateSky(dt){
       breachTimer = THREE.MathUtils.lerp(50, 16, state.dread) + Math.random()*20;
     }
   }
-  if(starMat) starMat.uniforms.uTime.value = skyClock;
+  if(starMat){
+    starMat.uniforms.uTime.value = skyClock;
+    // Stars used to ignore weather entirely - full brightness whether it
+    // was a clear night or the middle of a squall. getNearbySquallCount()
+    // is the same "how much rain is actually near the player right now"
+    // signal the HUD weather label uses (see ui/hud.js) - 0 nearby cells
+    // keeps stars at full visibility (a genuinely clear sky), each
+    // additional nearby cell dims them further, so heavy rain reads as a
+    // properly overcast sky with the stars actually hidden behind it.
+    const squalls = getNearbySquallCount();
+    const targetCoverage = squalls<=0 ? 1.0 : Math.max(0.05, 1.0 - squalls*0.32);
+    starMat.uniforms.uCoverage.value += (targetCoverage - starMat.uniforms.uCoverage.value) * Math.min(1, dt*0.8); // eased, not snapped - a squall drifting in/out shouldn't pop the whole sky on/off in one frame
+  }
   if(starPoints){ starPoints.position.x = state.playerX; starPoints.position.z = state.playerZ; }
   // the monolith - always the same fixed bearing/distance from the player,
   // by design (see comment at its creation). Faces the camera like the
