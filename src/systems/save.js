@@ -104,6 +104,7 @@ let autosaveTimer = AUTOSAVE_INTERVAL;
 
 export function tickAutosave(dt){
   if(!state.started) return;
+  if(!state.autosaveEnabled) return; // periodic tick only - checkpoint/pickup writeSave() calls elsewhere always fire regardless, same as they always did
   autosaveTimer -= dt;
   if(autosaveTimer<=0){ autosaveTimer = AUTOSAVE_INTERVAL; writeSave(); }
 }
