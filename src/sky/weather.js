@@ -69,6 +69,17 @@ function rainDropSprite(){
 }
 
 let cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat;
+// Cloud formation state - see formationRaw() inside cloudFrag below for
+// what each numeric value actually looks like, and updateCloudFormation()
+// near updateRain() for how this drifts between them. currentFormation is
+// the eased value actually sent to the shaders each frame; targetFormation
+// is where it's headed. Purely cosmetic/ambient variety (which kind of sky
+// you're currently under), not a story beat, so this is fine to run on its
+// own slow independent timer rather than needing an action-based gate -
+// nothing about it affects pacing, dread, or any quest/pickup logic.
+let currentFormation = Math.floor(Math.random()*3);
+let targetFormation = currentFormation;
+let formationChangeTimer = 90 + Math.random()*120;
 {
   const cloudVert = `
     varying vec3 vPos;
@@ -90,6 +101,13 @@ let cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat;
     uniform float uWrongness;
     uniform float uBreachAmt;
     uniform vec3 uBreachDir;
+    // 0 = cumulus (puffy rounded lumps, the original look), 1 = stratus
+    // (flat, elongated, banded overcast sheet), 2 = asperitas (turbulent,
+    // undulating, wave-rippled underside - the dramatic "boiling sea
+    // viewed from below" formation). Fractional values crossfade between
+    // neighbors - see formationRaw() below and weather.js's
+    // updateCloudFormation() for how this drifts between them over time.
+    uniform float uFormation;
 
     float hash3(vec3 p){
       p = fract(p*0.3183099 + vec3(0.1,0.2,0.3));
@@ -173,6 +191,36 @@ let cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat;
       float tip = smoothstep(dripBot+0.045, dripBot, dir.y) * smoothstep(width*2.4, width*0.6, abs(cf));
       return isActive * clamp(vertical*colMask + tip, 0.0, 1.0);
     }
+    // The single shared shape-field driving both the mask and the fake-
+    // volume relief below. Three formations, blended by uFormation:
+    //  - cumulus: the original puffy-lump fbm, unchanged
+    //  - stratus: the same warped domain squashed flat vertically and
+    //    stretched horizontally (elongated streaks instead of round
+    //    blobs), with a soft sine band folded in for a layered, sheet-
+    //    like overcast read
+    //  - asperitas: a coherent low-frequency traveling wave (two sine
+    //    terms at different angles/speeds so it doesn't read as one
+    //    uniform ripple direction) folded directly into the noise value
+    //    itself, so the mask threshold rises and falls in rolling bands
+    //    - that's what actually reads as "undulating"/"rippled" rather
+    //    than just turbulent. Turbulent fbm detail rides on top so it's
+    //    still organic, not a perfect sine grid.
+    float formationRaw(vec3 warped, vec3 dir, float form){
+      float nCum = cloudFbm(warped * 3.2);
+
+      vec3 stratP = warped * vec3(1.7, 0.4, 1.7);
+      float nStrRaw = cloudFbm(stratP * 2.0);
+      float band = 0.5 + 0.5*sin(dir.y*13.0 + nStrRaw*2.5);
+      float nStr = mix(nStrRaw, band, 0.4);
+
+      float wave = sin(dir.x*3.0 + dir.z*2.0 + uTime*0.05)*0.22
+                 + sin(dir.x*7.0 - dir.z*4.5 + uTime*0.09)*0.10;
+      float nAsp = cloudFbm(warped*2.6)*0.65 + wave + 0.35;
+
+      float t1 = clamp(form, 0.0, 1.0);
+      float t2 = clamp(form - 1.0, 0.0, 1.0);
+      return mix(mix(nCum, nStr, t1), nAsp, t2);
+    }
     void main(){
       vec3 dir = normalize(vPos) + uOffset;
       // domain warp - offsets the sampling position by another noise field
@@ -184,7 +232,7 @@ let cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat;
       float wy = noise(wp + vec3(27.2, 91.4, 15.6)) - 0.5;
       float wz = noise(wp + vec3(63.9, 12.2, 44.8)) - 0.5;
       vec3 warped = dir + vec3(wx, wy, wz) * 0.85;
-      float n = cloudFbm(warped * 3.2);
+      float n = formationRaw(warped, dir, uFormation);
       // widened from (0.38,0.68) - a narrower band made the cloud edge read
       // as a defined line/circle; spreading the same transition over more
       // of the noise range fades it out instead.
@@ -198,13 +246,13 @@ let cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat;
       vec3 hotWrong  = vec3(0.36,0.10,0.10);
       vec3 cold = mix(coldCalm, coldWrong, uWrongness);
       vec3 hot  = mix(hotCalm, hotWrong, uWrongness);
-      vec3 col = mix(cold, hot, n);
+      vec3 col = mix(cold, hot, clamp(n, 0.0, 1.0));
 
       // cheap fake-volume: sample the mask again at a tiny offset toward
       // "up" in noise-space and use the difference as a stand-in for a
       // surface normal, so puffs get a brighter lit crown and a darker
       // underside instead of reading as one flat painted layer.
-      float nUp = cloudFbm((warped + vec3(0.0, 0.06, 0.0)) * 3.2);
+      float nUp = formationRaw(warped + vec3(0.0, 0.06, 0.0), dir, uFormation);
       float relief = clamp((n - nUp) * 3.5, -1.0, 1.0);
       vec3 litTop = mix(vec3(0.62,0.63,0.66), vec3(0.62,0.22,0.20), uWrongness);
       vec3 shadUnder = vec3(0.05,0.045,0.06);
@@ -268,7 +316,7 @@ let cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat;
   const geo = new THREE.SphereGeometry(150, 40, 28);
   const breachUniforms = { uBreachAmt:{value:0}, uBreachDir:{value:new THREE.Vector3(0,1,0)} };
   cloudMat = new THREE.ShaderMaterial({
-    uniforms:{ uTime:{value:0}, uOpacity:{value:0.6}, uOffset:{value:new THREE.Vector3(0,0,0)}, uDread:{value:0}, uBleed:{value:0}, uWrongness:{value:0}, ...breachUniforms },
+    uniforms:{ uTime:{value:0}, uOpacity:{value:0.6}, uOffset:{value:new THREE.Vector3(0,0,0)}, uDread:{value:0}, uBleed:{value:0}, uWrongness:{value:0}, uFormation:{value:currentFormation}, ...breachUniforms },
     vertexShader:cloudVert, fragmentShader:cloudFrag,
     transparent:true, side:THREE.BackSide, blending:THREE.AdditiveBlending, depthWrite:false, fog:false
   });
@@ -277,7 +325,7 @@ let cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat;
 
   const geo2 = new THREE.SphereGeometry(170, 36, 24);
   cloudMat2 = new THREE.ShaderMaterial({
-    uniforms:{ uTime:{value:0}, uOpacity:{value:0.3}, uOffset:{value:new THREE.Vector3(50,20,10)}, uDread:{value:0}, uBleed:{value:0}, uWrongness:{value:0}, uBreachAmt:{value:0}, uBreachDir:{value:new THREE.Vector3(0,1,0)} },
+    uniforms:{ uTime:{value:0}, uOpacity:{value:0.3}, uOffset:{value:new THREE.Vector3(50,20,10)}, uDread:{value:0}, uBleed:{value:0}, uWrongness:{value:0}, uFormation:{value:currentFormation}, uBreachAmt:{value:0}, uBreachDir:{value:new THREE.Vector3(0,1,0)} },
     vertexShader:cloudVert, fragmentShader:cloudFrag,
     transparent:true, side:THREE.BackSide, blending:THREE.AdditiveBlending, depthWrite:false, fog:false
   });
@@ -565,7 +613,28 @@ const RAIN_COLOR_BLACK = new THREE.Color(0x0a0508);
 // approaches straight up or down - 1.0 would mean no compression at all
 const RAIN_MIN_UV_SQUASH = 0.22, RAIN_MIN_SIZE_SCALE = 0.5;
 const _camDir = new THREE.Vector3();
+// Slow, self-contained drift between the three cloud formations (see
+// formationRaw() in the cloud shader above). Independent of everything
+// else - not tied to dread/wrongness/pickups, just gives the ordinary sky
+// some day-to-day variety the way real weather does. Runs off dt, not
+// elapsed-since-boot, so pausing/backgrounding the tab doesn't cause a
+// pile of missed changes to suddenly resolve at once.
+function updateCloudFormation(dt){
+  formationChangeTimer -= dt;
+  if(formationChangeTimer <= 0){
+    formationChangeTimer = 90 + Math.random()*150;
+    // pick a genuinely different target, not a coin-flip that can land
+    // back on the one that's already showing
+    let next = targetFormation;
+    while(next === targetFormation) next = Math.floor(Math.random()*3);
+    targetFormation = next;
+  }
+  currentFormation += (targetFormation - currentFormation) * Math.min(1, dt*0.06); // ~15-20s to fully cross-fade
+  if(cloudMat) cloudMat.uniforms.uFormation.value = currentFormation;
+  if(cloudMat2) cloudMat2.uniforms.uFormation.value = currentFormation;
+}
 function updateRain(dt){
+  updateCloudFormation(dt);
   // rain has no per-particle occlusion against roofs (there's no geometry
   // raycast for weather) - the safehouse is the only roofed interior in
   // the game right now, so it's cheaper and correct-enough to just hide
