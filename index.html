@@ -1467,7 +1467,7 @@
     position:absolute; bottom:22%; left:50%; transform:translateX(-50%);
     color:var(--bone); font-size:.7rem; letter-spacing:.24em; text-transform:uppercase; font-weight:700;
     background:rgba(0,0,0,0.5); padding:9px 18px; border:1px solid rgba(201,194,182,0.3); border-top:2px solid var(--rust);
-    opacity:0; transition:opacity .25s ease; white-space:nowrap;
+    opacity:0; transition:opacity .25s ease, background-color .3s ease; white-space:nowrap;
   }
   #interact-prompt.show{ opacity:1; }
 
@@ -1475,7 +1475,8 @@
     position:absolute; top:38%; left:50%; transform:translateX(-50%);
     color:var(--rust); font-family:var(--font-serif); font-style:italic; letter-spacing:.15em;
     font-size:clamp(.8rem,3.4vw,1.1rem); opacity:0; text-shadow:0 0 14px rgba(122,31,31,0.6);
-    transition:opacity 1.4s ease; pointer-events:none; text-align:center; width:90%;
+    transition:opacity 1.4s ease, background-color .3s ease; pointer-events:none; text-align:center; width:90%;
+    padding:8px 16px; border-radius:2px;
   }
   #whisper.show{ opacity:.85; }
 
@@ -2043,6 +2044,32 @@
             <option value="fullscreen">Fullscreen</option>
           </select>
         </div>
+        <div class="panel-row">
+          <label><span>Particle Density</span><span id="settings-particle-density-val" class="live-val">100%</span></label>
+          <div class="slider-wrap">
+            <input type="range" id="settings-particle-density" min="20" max="100" value="100" />
+            <span class="slider-drip"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-section-label">Accessibility</div>
+        <div class="toggle-row">
+          <label>Reduce Flash Effects</label>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-reduce-flash" />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </span>
+        </div>
+        <div class="panel-row">
+          <label><span>Dialogue Box Opacity</span><span id="settings-dialogue-opacity-val" class="live-val">60%</span></label>
+          <div class="slider-wrap">
+            <input type="range" id="settings-dialogue-opacity" min="0" max="100" value="60" />
+            <span class="slider-drip"></span>
+          </div>
+        </div>
       </div>
 
       <div class="panel-section">
@@ -2107,6 +2134,14 @@
           <label>Shadows</label>
           <span class="toggle-switch">
             <input type="checkbox" id="settings-shadows" checked />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </span>
+        </div>
+        <div class="toggle-row">
+          <label>Autosave</label>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-autosave" checked />
             <span class="toggle-track"></span>
             <span class="toggle-thumb"></span>
           </span>
