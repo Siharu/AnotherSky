@@ -109,7 +109,7 @@ import {
   updateDoorFlash, updateSafehouseInterior,
   NOTEBOOK_POS, LOCKED_DOOR_POS, BED_TABLE_POS, SAFEHOUSE_DOOR_YAW,
   CALENDAR_POS, STORAGE_DRAWER_POS, CALENDAR_LAST_DAY,
-  SAFEHOUSE_CENTER,
+  SAFEHOUSE_CENTER, SAFEHOUSE_HALF_W, SAFEHOUSE_HALF_D,
 } from './world/safehouse.js';
 import { updateDoorTransitions } from './systems/doors.js';
 
@@ -1310,17 +1310,36 @@ function updateInsightGlimpse(dt){
 }
 
 {
+  // generateDistrict()'s own buildings check tooCloseToSpawn()/
+  // overlapsExisting() before placing anything, but this scatter pass
+  // never did - it was placing ruins/lamps anywhere from r=8 out to
+  // ~200 units from the origin with no exclusion at all. The safehouse
+  // interior sits right on top of spawn (SAFEHOUSE_CENTER) with an
+  // actual 22x16-unit footprint (SAFEHOUSE_HALF_W=11/HALF_D=8) - not
+  // covered by generateDistrict()'s circular SPAWN_CLEAR_RADIUS=10
+  // either, since 11 > 10. A lamp landing inside that box reads exactly
+  // like a streetlamp pole poking straight through the safehouse's
+  // walls/ceiling, since nothing was ever excluding this rectangle.
+  // +4 margin so poles/ruins don't spawn hugging the exterior walls either.
+  const SAFEHOUSE_CLEAR_W = SAFEHOUSE_HALF_W + 4, SAFEHOUSE_CLEAR_D = SAFEHOUSE_HALF_D + 4;
+  function tooCloseToSafehouse(x, z){
+    return Math.abs(x - SAFEHOUSE_CENTER.x) < SAFEHOUSE_CLEAR_W
+        && Math.abs(z - SAFEHOUSE_CENTER.z) < SAFEHOUSE_CLEAR_D;
+  }
   const ruinCount = 85;
   for(let i=0;i<ruinCount;i++){
     const ang = Math.random()*Math.PI*2, r = 8+Math.random()*205;
     const x=Math.cos(ang)*r, z=Math.sin(ang)*r;
+    if(tooCloseToSafehouse(x,z)) continue;
     addRuin(x,z, Math.floor(Math.random()*3));
   }
   const lampCount = 38;
   for(let i=0;i<lampCount;i++){
     const ang = (i/lampCount)*Math.PI*2 + Math.random()*0.4;
     const r = 8+Math.random()*195;
-    addLamp(Math.cos(ang)*r, Math.sin(ang)*r);
+    const x = Math.cos(ang)*r, z = Math.sin(ang)*r;
+    if(tooCloseToSafehouse(x,z)) continue;
+    addLamp(x, z);
   }
 }
 
