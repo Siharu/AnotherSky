@@ -1546,6 +1546,18 @@
        that it was a flash at all. */
     mix-blend-mode:screen;
   }
+  #lightning-bolt-canvas{
+    position:fixed; inset:0; z-index:18; pointer-events:none;
+    width:100%; height:100%; opacity:0;
+    /* sits one layer above #lightning-flash (the ambient screen-wide
+       brighten) and draws the actual jagged bolt shape on top of it -
+       see main.js's spawnLightningBolt(). Own opacity/transition
+       instead of reusing #lightning-flash's, since the bolt geometry
+       needs to be cleared from the canvas once it's fully faded (a
+       flat-color div has nothing to "clear", but stale bolt pixels
+       left on a canvas would show up again at the very start of the
+       next flash's fade-in otherwise). */
+  }
   #ending-screen{
     position:fixed; inset:0; z-index:70; background:#000; color:var(--bone); display:none;
     align-items:center; justify-content:center; flex-direction:column; text-align:center; padding:30px;
@@ -2091,9 +2103,18 @@
             <span class="toggle-thumb"></span>
           </span>
         </div>
+        <div class="toggle-row">
+          <label>Shadows</label>
+          <span class="toggle-switch">
+            <input type="checkbox" id="settings-shadows" checked />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </span>
+        </div>
       </div>
 
       <button class="danger-btn danger-btn-icon" id="settings-delete-save"><span class="danger-icon">⚠</span>Delete Memories (erase save)</button>
+      <button class="danger-btn danger-btn-icon" id="settings-clear-cache"><span class="danger-icon">⚠</span>Clear Cache (keep save)</button>
       <button class="panel-close" id="settings-close">Close</button>
 
       <div class="panel-term-footer">
@@ -2390,6 +2411,7 @@
 <div id="vignette"></div>
 <div id="dread-tint"></div>
 <div id="lightning-flash"></div>
+<canvas id="lightning-bolt-canvas"></canvas>
 <div id="ending-screen">
   <h2 id="ending-text"></h2>
   <div class="small">tap to close your eyes again</div>
