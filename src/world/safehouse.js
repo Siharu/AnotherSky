@@ -1181,8 +1181,29 @@ function updateSafehouseInterior(skyClock, dt){
       lockedDoorPivot.position.x = LOCKED_DOOR_X + (Math.random()-0.5)*0.02;
       lockedDoorPivot.rotation.z = Math.sin(g)*0.015;
       const mesh = lockedDoorPivot.children[0];
-      if(mesh && Math.random() < 0.4){
-        mesh.material.color.setHSL((skyClock*0.4)%1, 0.85, 0.5+Math.sin(g*2)*0.15);
+      if(mesh){
+        // Was: 40%-per-frame chance to reassign color, with hue =
+        // (skyClock*0.4)%1 - that sweeps the ENTIRE hue spectrum
+        // continuously over a few seconds, at high saturation/lightness.
+        // At ~60fps with a 40% trigger chance that's a smooth, fast wash
+        // through every color there is - reads as a solid, bright, flat-
+        // colored slab (see the reported screenshot: solid magenta), not
+        // a glitch. An actual chromatic-glitch reads as mostly WRONG-but-
+        // STILL (a dark, off-hue resting color) with rare, brief, jarring
+        // flashes - not a continuous rainbow. ud.flashTimer tracks a held
+        // flash so each one lasts long enough to actually register (a
+        // single-frame color swap is invisible at 60fps) before reverting.
+        const ud = mesh.userData;
+        if(ud.flashTimer === undefined) ud.flashTimer = 0;
+        ud.flashTimer -= dt||0.016;
+        if(ud.flashTimer <= 0){
+          if(Math.random() < 0.015){ // ~1 flash/second on average, not every frame
+            mesh.material.color.setHSL(Math.random(), 0.9, 0.55);
+            ud.flashTimer = 0.06 + Math.random()*0.1; // held just long enough to read as a flash, not a single invisible frame
+          } else {
+            mesh.material.color.setHSL(0.78, 0.35, 0.13); // resting: dark, subtly-wrong violet-maroon, not a bright fill
+          }
+        }
       }
     }
   }
