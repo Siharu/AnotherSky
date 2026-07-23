@@ -436,6 +436,11 @@ for(let i=0;i<RAIN_COUNT;i++){
 }
 rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos,3));
 rainGeo.setAttribute('aSize', new THREE.BufferAttribute(rainSize,1));
+// Tracks whatever setRainDensity() last set drawRange.count to (see
+// bottom of file) - the sim loop below only iterates this many drops
+// instead of always RAIN_COUNT, so lowering particle density is a real
+// CPU saving on the simulation too, not just fewer verts rasterized.
+let activeRainCount = RAIN_COUNT;
 
 /* Points instead of LineSegments (the "cheap beautiful rain" swap):
    each drop is one camera-facing billboard using the blurred vertical-
@@ -613,6 +618,66 @@ const RAIN_COLOR_BLACK = new THREE.Color(0x0a0508);
 // approaches straight up or down - 1.0 would mean no compression at all
 const RAIN_MIN_UV_SQUASH = 0.22, RAIN_MIN_SIZE_SCALE = 0.5;
 const _camDir = new THREE.Vector3();
+
+/* ---------- ASH / EMBERS ----------
+   A third particle layer, distinct from dust: dust is a constant ambient
+   haze that only shifts color/thickness with wrongness (see updateDust),
+   while these rise - slow embery motes drifting upward with a warm glow,
+   present at low wrongness but only becoming visible as dread/forgetting
+   climbs. Reuses the additive-blend/frustumCulled=false/wrap-around-player
+   pattern the other two layers already use rather than inventing a new
+   one. Opacity is entirely wrongness-driven (0 at calm), so this costs
+   nothing visually during ordinary play and only shows up as things sour. */
+function emberSprite(){
+  const size=64, c=makeCanvas(size), ctx=c.getContext('2d');
+  const g=ctx.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
+  g.addColorStop(0,'rgba(255,196,120,1)');
+  g.addColorStop(0.4,'rgba(220,110,50,0.7)');
+  g.addColorStop(1,'rgba(220,110,50,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,size,size);
+  return new THREE.CanvasTexture(c);
+}
+const ASH_COUNT = 90, ASH_RADIUS = 22;
+const ashGeo = new THREE.BufferGeometry();
+const ashPos = new Float32Array(ASH_COUNT*3);
+const ashSeed = new Float32Array(ASH_COUNT);
+const ashRise = new Float32Array(ASH_COUNT);
+for(let i=0;i<ASH_COUNT;i++){
+  ashPos[i*3]=(Math.random()-0.5)*ASH_RADIUS*2;
+  ashPos[i*3+1]=Math.random()*4;
+  ashPos[i*3+2]=(Math.random()-0.5)*ASH_RADIUS*2;
+  ashSeed[i]=Math.random()*100;
+  ashRise[i]=0.15+Math.random()*0.35; // per-particle rise speed, embers drift up at different rates
+}
+ashGeo.setAttribute('position', new THREE.BufferAttribute(ashPos,3));
+let activeAshCount = ASH_COUNT;
+const ashMat = new THREE.PointsMaterial({ size:0.22, map:emberSprite(), transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false, sizeAttenuation:true, color:0xffb066 });
+const ash = new THREE.Points(ashGeo, ashMat);
+ash.frustumCulled = false; // same reasoning as dust/rain above - wraps around the player
+scene.add(ash);
+
+function updateAsh(dt){
+  const pull = Math.max(state.dread, state.forgetting);
+  if(pull < 0.05){ ashMat.opacity = 0; return; } // skip the per-particle work entirely while calm - this is the common case for most of a playthrough
+  const arr = ashGeo.attributes.position.array;
+  const px=state.playerX, pz=state.playerZ;
+  const t = performance.now()*0.0006;
+  const gustMul = 1 + state.windGust*1.6; // gusts scatter embers sideways same as they do rain/dust
+  ashMat.opacity = Math.max(0, (pull-0.05)/0.95) * (0.5 + 0.5*Math.sin(t*2.1)); // slow ember flicker, independent of the twinkle dust already uses so the two layers don't pulse in lockstep
+  for(let i=0;i<activeAshCount;i++){
+    const idx=i*3, seed=ashSeed[i];
+    arr[idx] += state.windX*dt*0.35*gustMul + Math.sin(t*1.3+seed)*0.004;
+    arr[idx+1] += ashRise[i]*dt;
+    arr[idx+2] += state.windZ*dt*0.35*gustMul + Math.cos(t*1.3+seed)*0.004;
+    if(arr[idx+1]>7) arr[idx+1] = 0; // recycle at the ground rather than fading - embers reads better as a continuous rising column than a fade-in/out pop
+    let dx=arr[idx]-px;
+    if(dx>ASH_RADIUS) arr[idx]-=ASH_RADIUS*2; else if(dx<-ASH_RADIUS) arr[idx]+=ASH_RADIUS*2;
+    let dz=arr[idx+2]-pz;
+    if(dz>ASH_RADIUS) arr[idx+2]-=ASH_RADIUS*2; else if(dz<-ASH_RADIUS) arr[idx+2]+=ASH_RADIUS*2;
+  }
+  ashGeo.attributes.position.needsUpdate = true;
+}
+
 // Slow, self-contained drift between the three cloud formations (see
 // formationRaw() in the cloud shader above). Independent of everything
 // else - not tied to dread/wrongness/pickups, just gives the ordinary sky
@@ -658,9 +723,16 @@ function updateRain(dt){
 
   const arr = rainGeo.attributes.position.array;
   const px=state.playerX, pz=state.playerZ;
-  const gustMul = 1 + state.windGust*2.2;
+  const gustMul = 1 + state.windGust*3.2; // was 2.2 - gusts now read as a real lateral shove, not just a slight drift bump
   const windX = state.windX*0.4*gustMul, windZ = state.windZ*0.4*gustMul;
   const suction = wrongness>0.8 ? (wrongness-0.8)/0.2 : 0; // 0..1 near peak dread
+
+  // stretches the drop sprite laterally under uUvSquash's own vertical
+  // compression during a gust, so heavy wind reads as streaking rain
+  // rather than just rain that drifts sideways while staying visually
+  // vertical. Purely a rendering touch - doesn't feed back into the
+  // per-drop position sim below at all.
+  rainMat.uniforms.uSizeScale.value *= 1 + state.windGust*0.35;
 
   // drift each rain cell slowly around the player - phase advances at the
   // cell's own speed (some cw, some ccw, per-cell rate from init) so the
@@ -672,7 +744,7 @@ function updateRain(dt){
     rainCellZ[c] = Math.sin(rainCellPhase[c])*rainCellOrbit[c] + windZ*6.0;
   }
 
-  for(let i=0;i<RAIN_COUNT;i++){
+  for(let i=0;i<activeRainCount;i++){
     const idx=i*3;
     const cell = rainDropCell[i];
     const cx = px+rainCellX[cell], cz = pz+rainCellZ[cell], cr = rainCellR[cell];
@@ -714,6 +786,7 @@ function updateDust(dt){
   const arr = dustGeo.attributes.position.array;
   const px=state.playerX, pz=state.playerZ;
   const t = performance.now()*0.0006;
+  const dustGustMul = 1 + state.windGust*1.8; // dust previously ignored windGust entirely - gusts kicked rain but left dust drifting at its steady rate
 
   // wind slowly rotates direction over time instead of staying fixed
   state.windTarget += dt*0.05;
@@ -740,9 +813,9 @@ function updateDust(dt){
   for(let i=0;i<DUST_COUNT;i++){
     const idx=i*3;
     const seed = dustSeed[i];
-    arr[idx] += state.windX*dt*0.55 + Math.sin(t+seed)*0.003;
+    arr[idx] += state.windX*dt*0.55*dustGustMul + Math.sin(t+seed)*0.003;
     arr[idx+1] += 0.0025 + Math.sin(t*0.7+seed)*0.0015 + pull*pull*dt*3.5;
-    arr[idx+2] += state.windZ*dt*0.55 + Math.cos(t+seed)*0.003;
+    arr[idx+2] += state.windZ*dt*0.55*dustGustMul + Math.cos(t+seed)*0.003;
     if(arr[idx+1]>6+pull*40) arr[idx+1]=0;
     let dx=arr[idx]-px;
     if(dx>DUST_RADIUS) arr[idx]-=DUST_RADIUS*2; else if(dx<-DUST_RADIUS) arr[idx]+=DUST_RADIUS*2;
@@ -774,8 +847,14 @@ export function getNearbySquallCount(){
 // outside the range are still updated every frame (cheap, just math on
 // a typed array) but never drawn, so density can be flipped instantly
 // with no buffer rebuild and no visible pop in the drops that remain.
+// Also scales the ash layer the same way - one slider governs every
+// particle system in this file rather than needing a second control.
 export function setRainDensity(density){
-  rainGeo.setDrawRange(0, Math.round(RAIN_COUNT*Math.max(0, Math.min(1, density))));
+  const d = Math.max(0, Math.min(1, density));
+  activeRainCount = Math.round(RAIN_COUNT*d);
+  rainGeo.setDrawRange(0, activeRainCount);
+  activeAshCount = Math.round(ASH_COUNT*d);
+  ashGeo.setDrawRange(0, activeAshCount);
 }
 
-export { cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat, rain, farRain, dust, updateRain, updateDust };
+export { cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat, rain, farRain, dust, ash, updateRain, updateDust, updateAsh };
