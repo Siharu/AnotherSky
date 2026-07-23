@@ -52,7 +52,7 @@ import {
 import { SAVE_KEY, hasSave, writeSave, deleteSave, updateRegainAvailability, tickAutosave, migrateSave } from './systems/save.js';
 import {
   userVolume, settingsSensMult, settingsBrightness, settingsResScale,
-  settingsInvertY, settingsVibration,
+  settingsInvertY, settingsVibration, settingsReduceFlash,
   applyResolution, settingsOverlay, settingsOpenedFromHub,
   setSettingsOpenedFromHub, closeSettingsOverlay, saveSettings
 } from './systems/settings.js';
@@ -440,6 +440,16 @@ function spawnLightningBolt(){
 }
 let lightningTimer = 6;
 function triggerLightning(){
+  // Screen-space flash + bolt read as sky/cloud light, so they make no
+  // sense once state.insideSafehouse hides the sky behind walls (same
+  // check weather.js uses to hide rain). Thunder itself still plays -
+  // sound carries indoors - just the visual is skipped. settingsReduceFlash
+  // is the separate photosensitivity case: player is outdoors and the
+  // flash is "correct," but they've asked not to see it regardless.
+  if(state.insideSafehouse || settingsReduceFlash){
+    playThunder();
+    return;
+  }
   spawnLightningBolt();
   // Was strength 0.55-0.95 on a flat, non-blended white layer - that
   // combination is what actually hurt to look at (see the CSS comment on
