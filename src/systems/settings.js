@@ -91,9 +91,20 @@ export function applyShadows(){
 function applyDialogueOpacity(){
   const whisper = $('whisper');
   const prompt = $('interact-prompt');
-  const bg = `rgba(10,8,8,${settingsDialogueOpacity*0.75})`;
-  if(whisper) whisper.style.background = settingsDialogueOpacity>0 ? bg : 'none';
-  if(prompt) prompt.style.background = settingsDialogueOpacity>0 ? bg : 'rgba(0,0,0,0.5)'; // 0.5 is the panel's own original default, not "off"
+  // Radial fade rather than a flat rectangle - the box was reading as a
+  // hard dark tile sitting on top of the scene, especially at higher
+  // opacity where the sharp edges fight the game's own soft lighting.
+  // Fading out from center to transparent keeps the readability boost
+  // without ever showing a rectangle outline.
+  if(whisper){
+    whisper.style.background = settingsDialogueOpacity>0
+      ? `radial-gradient(ellipse 80% 100% at center, rgba(10,8,8,${settingsDialogueOpacity*0.85}) 0%, rgba(10,8,8,${settingsDialogueOpacity*0.4}) 55%, rgba(10,8,8,0) 85%)`
+      : 'none';
+  }
+  // interact-prompt is a UI chip (bordered pill, not narrative text) -
+  // keeps its original flat background regardless of the slider, just
+  // scaled by the same opacity value so 0% still means "no box" there too.
+  if(prompt) prompt.style.background = settingsDialogueOpacity>0 ? `rgba(0,0,0,${settingsDialogueOpacity*0.83})` : 'rgba(0,0,0,0.5)';
 }
 
 function applyParticleDensity(){
