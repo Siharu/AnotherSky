@@ -11,7 +11,7 @@ import {
 } from './sky/sky.js';
 import {
   cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat,
-  updateRain, updateDust
+  updateRain, updateDust, updateAsh
 } from './sky/weather.js';
 import { makeCanvas, patchFogToDistance } from './render/postprocessing.js';
 import { terrainHeight, groundHeightAt } from './world/terrain.js';
@@ -3254,7 +3254,7 @@ function animate(){
     updateRain(dt);
     updateWeatherLabel();
     updateDust(dt);
-    updateLamps(dt);
+    updateAsh(dt);
     updateDread(dt);
     updateWhisper(dt);
     updateSky(dt);
