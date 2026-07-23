@@ -101,6 +101,15 @@
     --ink:#050608;
     --bone:#c9c2b6;
     --rust:#7a1f1f;
+    /* --rust alone is ~2:1 contrast against the game's near-black panel
+       backgrounds (#040305/rgba(0,0,0,0.9)-ish) - fine as a border/accent
+       color, but used as actual text color it's frequently unreadable
+       (memory titles, dialogue, objective text, item names). This is a
+       brighter variant for text specifically - kept the same hue/warmth,
+       just lifted enough to clear WCAG's ~4.5:1 floor for body text
+       (~5.3:1 measured against #040305). --rust itself is untouched so
+       borders/backgrounds/accents keep their original darker look. */
+    --rust-light:#d65858;
     --violet:#4a3a5c;
     --font-mono:'Space Mono', 'Courier New', Courier, monospace;
     --font-serif:'Cormorant Garamond', Georgia, 'Times New Roman', serif;
@@ -117,7 +126,7 @@
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none;}
   html,body{
     margin:0; padding:0; width:100%; height:100%; overflow:hidden;
-    background:#000; font-family:var(--font-mono);
+    background:#000; color:var(--bone); font-family:var(--font-mono);
     touch-action:none; overscroll-behavior:none;
   }
   .notched{
@@ -600,7 +609,7 @@
      that never got wired up - the CSS existed, unused, for who knows how
      long. Putting it back to work here instead of writing new rules. */
   .lore-entry{ margin-bottom:20px; padding:14px 0 14px 14px; border-left:2px solid rgba(122,31,31,0.4); position:relative; }
-  .lore-entry h3{ font-size:.68rem; letter-spacing:.25em; color:var(--rust); text-transform:uppercase; margin:0 0 8px 0; font-weight:700; font-family:var(--font-mono); }
+  .lore-entry h3{ font-size:.68rem; letter-spacing:.25em; color:var(--rust-light); text-transform:uppercase; margin:0 0 8px 0; font-weight:700; font-family:var(--font-mono); }
   .lore-entry p{ font-family:var(--font-serif); font-size:.92rem; line-height:1.6; opacity:.88; margin:0; font-style:italic; letter-spacing:.01em; }
   .lore-entry.locked{ border-left-color:rgba(201,194,182,0.15); }
   .lore-entry.locked h3{ color:rgba(201,194,182,0.35); }
@@ -616,7 +625,7 @@
   }
   .inventory-row .inv-name{ color:var(--bone); }
   .inventory-row .inv-status{ font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; opacity:.55; }
-  .inventory-row.inv-have .inv-status{ color:var(--rust); opacity:.85; }
+  .inventory-row.inv-have .inv-status{ color:var(--rust-light); opacity:.85; }
   /* ---------- BAG GRID (Phase 3 item/inventory framework) ----------
      A literal small bag of slots now, not just a status list - the grid
      sits above the existing objectives rows (untouched styling above).
@@ -636,7 +645,7 @@
   .inv-slot:hover{ border-color:rgba(201,194,182,0.4); }
   .inv-slot.empty .inv-glyph{ opacity:.22; }
   .inv-slot.filled{ border-color:rgba(122,31,31,0.4); background:rgba(122,31,31,0.06); }
-  .inv-slot.filled .inv-glyph{ color:var(--rust); opacity:.9; }
+  .inv-slot.filled .inv-glyph{ color:var(--rust-light); opacity:.9; }
   .inv-slot.selected{ border-color:var(--bone); box-shadow:0 0 0 1px rgba(201,194,182,0.25) inset; }
   .inv-glyph{ font-size:1.1rem; color:var(--bone); line-height:1; user-select:none; }
   .inv-detail{
@@ -645,7 +654,7 @@
   }
   .inv-detail.inv-detail-empty{ opacity:.4; font-style:italic; font-family:var(--font-serif); font-size:.82rem; border-left-color:rgba(201,194,182,0.15); }
   .inv-detail-name{ font-size:.7rem; letter-spacing:.18em; text-transform:uppercase; color:var(--bone); margin-bottom:6px; font-family:var(--font-mono); }
-  .inv-detail.inv-have .inv-detail-name{ color:var(--rust); }
+  .inv-detail.inv-have .inv-detail-name{ color:var(--rust-light); }
   .inv-detail-desc{ font-family:var(--font-serif); font-size:.86rem; line-height:1.55; opacity:.85; font-style:italic; }
   .inv-section-label{
     font-size:.62rem; letter-spacing:.2em; text-transform:uppercase; opacity:.4;
@@ -654,7 +663,7 @@
   .help-row{ margin-bottom:16px; }
   .help-row .help-key{
     display:inline-block; min-width:120px; font-family:var(--font-mono); font-size:.7rem;
-    letter-spacing:.08em; color:var(--rust); text-transform:uppercase; margin-right:10px;
+    letter-spacing:.08em; color:var(--rust-light); text-transform:uppercase; margin-right:10px;
   }
   .help-row .help-desc{ font-family:var(--font-serif); font-size:.85rem; opacity:.8; font-style:italic; }
   .help-section-title{
@@ -790,7 +799,7 @@
     color:rgba(201,194,182,0.4);
   }
   .hub-note-value{
-    font-family:var(--font-scrawl); font-size:14px; color:var(--rust); margin-top:2px; line-height:1.2;
+    font-family:var(--font-scrawl); font-size:14px; color:var(--rust-light); margin-top:2px; line-height:1.2;
   }
   .hub-note-sub{
     font-family:var(--font-scrawl); font-size:10.5px; color:rgba(201,194,182,0.55);
@@ -812,7 +821,7 @@
     transition:color .2s ease; display:inline-flex; align-items:center;
   }
   .svg-footer-link:hover, .svg-footer-link:focus-visible{ color:var(--bone); }
-  .svg-footer-link.danger{ color:var(--rust); }
+  .svg-footer-link.danger{ color:var(--rust-light); }
   .svg-footer-link.danger:hover, .svg-footer-link.danger:focus-visible{ color:#c9605f; }
   .svg-footer-link.btn-corrupt{ animation: btnPressCorrupt .22s steps(2) 1; }
   .panel-box{
@@ -903,11 +912,11 @@
   .panel-section{ margin-bottom:6px; }
   .panel-section-label{
     font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; text-transform:uppercase;
-    color:var(--rust); border-bottom:1px solid rgba(122,31,31,0.3);
+    color:var(--rust-light); border-bottom:1px solid rgba(122,31,31,0.3);
     padding-bottom:6px; margin-bottom:16px;
   }
   .danger-btn-icon{ display:flex; align-items:center; justify-content:center; gap:8px; }
-  .danger-icon{ color:var(--rust); font-size:.85em; line-height:1; }
+  .danger-icon{ color:var(--rust-light); font-size:.85em; line-height:1; }
   .panel-term-footer{
     display:flex; justify-content:space-between; gap:12px; margin-top:18px;
     padding-top:12px; border-top:1px dashed rgba(201,194,182,0.15);
@@ -1030,7 +1039,7 @@
   .custom-select-options li:hover, .custom-select-options li.pending{
     background:rgba(122,31,31,0.16); color:var(--bone);
   }
-  .custom-select-options li.selected{ color:var(--rust); }
+  .custom-select-options li.selected{ color:var(--rust-light); }
   .custom-select-options li.selected::after{ content:' \2014 current'; opacity:.5; font-size:.9em; }
   .panel-close{
     display:block; margin:26px auto 0; background:none; border:1px solid rgba(201,194,182,0.3);
@@ -1359,7 +1368,7 @@
     font-size:.66rem; letter-spacing:.03em; line-height:1.6; color:var(--bone);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
-  .obj-row.current{ opacity:1; color:var(--rust); }
+  .obj-row.current{ opacity:1; color:var(--rust-light); }
   .obj-row.current::before{ content:'- '; }
   .obj-row.next{ opacity:.4; padding-left:1.1em; }
 
@@ -1473,7 +1482,7 @@
 
   #whisper{
     position:absolute; top:38%; left:50%; transform:translateX(-50%);
-    color:var(--rust); font-family:var(--font-serif); font-style:italic; letter-spacing:.15em;
+    color:var(--rust-light); font-family:var(--font-serif); font-style:italic; letter-spacing:.15em;
     font-size:clamp(.8rem,3.4vw,1.1rem); opacity:0; text-shadow:0 0 14px rgba(122,31,31,0.6);
     transition:opacity 1.4s ease, background-color .3s ease; pointer-events:none; text-align:center;
     display:inline-block; max-width:min(90%, 480px); width:max-content;
@@ -1614,9 +1623,9 @@
   #compass-track .tick.minor{ opacity:.4; font-size:.85em; font-weight:400; }
   #compass-pointer{
     position:absolute; top:-1px; left:50%; transform:translateX(-50%);
-    font-size:.6rem; color:var(--rust); line-height:1; z-index:1;
+    font-size:.6rem; color:var(--rust-light); line-height:1; z-index:1;
   }
-  #compass-strip.lying #compass-track{ color:var(--rust); opacity:.7; }
+  #compass-strip.lying #compass-track{ color:var(--rust-light); opacity:.7; }
   #compass-strip.lying #compass-pointer{ animation:compassLieJitter .4s steps(2) infinite; }
   @keyframes compassLieJitter{ 0%,100%{ transform:translateX(-50%) translateY(0); } 50%{ transform:translateX(-50%) translateY(1px); } }
 
@@ -1642,7 +1651,7 @@
   }
   #weather-label.tier-light #weather-label-cond{ color:var(--bone); }
   #weather-label.tier-rain #weather-label-cond{ color:#9fb8c9; }
-  #weather-label.tier-heavy #weather-label-cond{ color:var(--rust); }
+  #weather-label.tier-heavy #weather-label-cond{ color:var(--rust-light); }
 
   /* ---------- MINIMAP ----------
      Hidden until the radio tower is reached. Small radar-style circle,
