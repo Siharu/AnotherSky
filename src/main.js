@@ -25,6 +25,7 @@ import {
   exitRoadDirX, exitRoadDirZ, exitRoadPerpX, exitRoadPerpZ
 } from './world/worldData.js';
 import { resolveCollisions } from './systems/collision.js';
+import { gameConfirm } from './ui/dialog.js';
 import { renderHelp } from './ui/help.js';
 import { renderMemories } from './ui/memories.js';
 import { renderRadioLog } from './ui/radiolog.js';
@@ -2816,10 +2817,10 @@ $('hub-settings').addEventListener('click', ()=>{
   hubOverlay.classList.remove('open'); // hide hub underneath so it doesn't stack with settings
   settingsOverlay.classList.add('open');
 });
-$('hub-load').addEventListener('click', ()=>{
+$('hub-load').addEventListener('click', async ()=>{
   corruptPress($('hub-load'));
   if(!hasSave()){ showHubFlavor('there is nothing here to return to.'); return; }
-  if(!confirm('Load your last save? Any progress since then will be lost.')) return;
+  if(!await gameConfirm('Load your last save? Any progress since then will be lost.', 'LOAD SAVE')) return;
   const raw = (()=>{ try{ return localStorage.getItem(SAVE_KEY); }catch(e){ return null; } })();
   if(!raw) return;
   try{
@@ -2827,9 +2828,9 @@ $('hub-load').addEventListener('click', ()=>{
     restoreFromSave(JSON.parse(raw));
   }catch(e){ console.error('save data corrupt, ignoring', e); }
 });
-$('hub-quit').addEventListener('click', ()=>{
+$('hub-quit').addEventListener('click', async ()=>{
   corruptPress($('hub-quit'));
-  if(!confirm('Quit to the title screen? Make sure anything you want kept has been saved.')) return;
+  if(!await gameConfirm('Quit to the title screen? Make sure anything you want kept has been saved.', 'QUIT')) return;
   location.reload();
 });
 
