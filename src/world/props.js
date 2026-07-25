@@ -126,10 +126,17 @@ patchFogToDistance(puddleMat);
 // they and the street surface read as wet, using state.groundWetness
 // (see sky/weather.js's updateGroundWetness). Ground itself (main.js's
 // groundMat) is applied separately there since props.js doesn't own it.
-export function updateWetnessVisuals(){
+const PUDDLE_COLOR_BASE = new THREE.Color(0x6a3a52);
+export function updateWetnessVisuals(skyColor){
   const w = state.groundWetness;
   puddleMat.opacity = 0.45 + w*0.85; // was 0.35 + w*0.65 - stronger baseline visibility and a harder ramp into full rain
   streetMat.color.copy(STREET_COLOR_DRY).lerp(STREET_COLOR_WET, w);
+  // cheap fake "reflection": as puddles get wetter they pick up the
+  // current sky color instead of real planar-reflection geometry - a
+  // dry puddle keeps its base tint, a rain-soaked one visibly mirrors
+  // whatever mood the sky is currently in (including sky wrongness/dread
+  // tinting, since skyColor already reflects that upstream).
+  if(skyColor) puddleMat.color.copy(PUDDLE_COLOR_BASE).lerp(skyColor, w*0.55);
 }
 const puddleMesh = new THREE.InstancedMesh(puddleGeo, puddleMat, MAX_PUDDLE);
 puddleGeo.computeBoundingSphere();
