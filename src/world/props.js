@@ -23,6 +23,7 @@ import { groundHeightAt } from './terrain.js';
 import { makeCanvas, patchFogToDistance, addGlow } from '../render/postprocessing.js';
 import { toonRamp, stoneTex, streetTexture, metalTex, woodPlankTex } from './materials.js';
 import { obstacles, lamps, CHUNK_SIZE, _counters, _alloc } from './worldData.js';
+import { state } from '../core/state.js';
 
 // shared lamp-pole material - was a flat MeshToonMaterial color (0x0d0d0e,
 // no map at all), the last obviously-untextured structure alongside
@@ -55,6 +56,8 @@ function addLamp(x,z){
 const streetTex = streetTexture();
 const streetMat = new THREE.MeshToonMaterial({ map:streetTex, color:0x9a969c, gradientMap:toonRamp, side:THREE.DoubleSide });
 patchFogToDistance(streetMat);
+const STREET_COLOR_DRY = new THREE.Color(0x9a969c);
+const STREET_COLOR_WET = new THREE.Color(0x2e2c33); // was 0x4a4850 - pushed darker to match ground's stronger contrast
 function addStreetRibbon(ang, fromDist, toDist, halfWidth){
   const dirX = Math.cos(ang), dirZ = Math.sin(ang);
   const perpX = -dirZ, perpZ = dirX;
@@ -115,6 +118,19 @@ const puddleMat = new THREE.MeshBasicMaterial({
   color: 0x6a3a52
 });
 patchFogToDistance(puddleMat);
+
+// Wetness visuals: puddles already exist as permanent scattered
+// decoration (see scatterChunkClutter below - they're set dressing for
+// a world that's already been rained on before, not new this frame), so
+// this doesn't toggle them on/off from nothing - it scales how strongly
+// they and the street surface read as wet, using state.groundWetness
+// (see sky/weather.js's updateGroundWetness). Ground itself (main.js's
+// groundMat) is applied separately there since props.js doesn't own it.
+export function updateWetnessVisuals(){
+  const w = state.groundWetness;
+  puddleMat.opacity = 0.45 + w*0.85; // was 0.35 + w*0.65 - stronger baseline visibility and a harder ramp into full rain
+  streetMat.color.copy(STREET_COLOR_DRY).lerp(STREET_COLOR_WET, w);
+}
 const puddleMesh = new THREE.InstancedMesh(puddleGeo, puddleMat, MAX_PUDDLE);
 puddleGeo.computeBoundingSphere();
 scene.add(puddleMesh);
