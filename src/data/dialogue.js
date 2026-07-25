@@ -123,7 +123,7 @@ export const radioPhantomLines = [
 export const playerCallOutLines = [
   "anyone left out here? say something.",
   "i know how this sounds. i'm asking anyway.",
-  "...if you can hear me, i'm not going to hurt you.",
+  "i keep doing this. calling out. it never works. i still do it.",
   "nobody. of course."
 ];
 
