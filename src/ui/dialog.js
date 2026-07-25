@@ -7,26 +7,36 @@
 // just add `await` and swap confirm(x) -> await gameConfirm(x). alert() has a
 // single-button gameAlert() counterpart for the same reason.
 
-// Ransom-note text: splits into words, each wrapped in a span with a random
-// typeface pulled from the game's existing rn-f0..rn-f6 pool (defined
-// globally in index.html - same fonts main.js's own ransomize() uses for
-// pickup lines/menu labels). Kept as a small local copy rather than
-// importing main.js's version - main.js imports THIS module, so importing
-// back would be circular; this pool only needs the DOM classes, not any
-// shared state, so duplicating the ~15 lines is simpler than restructuring
-// the export graph for it.
-const RANSOM_FONTS = ['rn-f0','rn-f1','rn-f2','rn-f3','rn-f4','rn-f5','rn-f6'];
+// Ransom-note text: splits into words, occasionally swapping one into a
+// mismatched typeface from the game's existing rn-f0..rn-f6 pool (same
+// fonts main.js's own ransomize() uses for pickup lines/menu labels).
+// Was: every single word got a random font/rotation/size - correct
+// ransom-note logic, but on a full paragraph of body text that's a wall of
+// noise, not dread (screenshot feedback: "hurts my eyes"). Restrained to
+// occasional intrusions instead: most words stay in the dialog's own
+// plain italic serif, and only a minority get pulled into a wrong font -
+// reads as a few words are somehow not right, unsettling, rather than the
+// whole sentence being visibly cut-and-pasted. Rotation/size jitter also
+// pulled way back for the same reason - a slight, quiet wrongness, not a
+// crooked scrapbook. Kept as a small local copy rather than importing
+// main.js's version - main.js imports THIS module, so importing back
+// would be circular; this pool only needs the DOM classes, not any shared
+// state, so duplicating the logic is simpler than restructuring the
+// export graph for it.
+const RANSOM_FONTS = ['rn-f0','rn-f2','rn-f3','rn-f6']; // trimmed from the full pool - dropped the brighter/busier faces (news italic, courier2) that read more "tabloid" than "wrong"
+const RANSOM_WORD_CHANCE = 0.22; // was every word (1.0) - most words now stay put
 function ransomizeDialogText(el){
   const words = el.textContent.split(/(\s+)/);
   el.innerHTML = '';
   words.forEach(tok=>{
     if(tok.trim()===''){ el.appendChild(document.createTextNode(tok)); return; }
+    if(Math.random() >= RANSOM_WORD_CHANCE){ el.appendChild(document.createTextNode(tok)); return; }
     const span = document.createElement('span');
     span.className = 'rn-word ' + RANSOM_FONTS[Math.floor(Math.random()*RANSOM_FONTS.length)];
     span.textContent = tok;
-    const rot = (Math.random()*8-4).toFixed(1);
-    const ty = (Math.random()*5-2.5).toFixed(1);
-    const sizePct = (92+Math.random()*18).toFixed(0);
+    const rot = (Math.random()*3-1.5).toFixed(1);
+    const ty = (Math.random()*2-1).toFixed(1);
+    const sizePct = (96+Math.random()*10).toFixed(0);
     span.style.fontSize = sizePct + '%';
     span.style.transform = `rotate(${rot}deg) translateY(${ty}px)`;
     el.appendChild(span);
@@ -80,24 +90,27 @@ function ensureBuilt(){
       content:''; position:absolute; inset:0; z-index:2; pointer-events:none;
       background:repeating-linear-gradient(
         to bottom,
-        rgba(255,255,255,0.12) 0px,
-        rgba(255,255,255,0.12) 1px,
-        rgba(0,0,0,0.4) 2px,
-        rgba(0,0,0,0.4) 3px
+        rgba(255,255,255,0.06) 0px,
+        rgba(255,255,255,0.06) 1px,
+        rgba(0,0,0,0.22) 2px,
+        rgba(0,0,0,0.22) 3px
       );
       background-size:100% 3px;
-      animation: dialog-scanline-roll 5s linear infinite;
+      animation: dialog-scanline-roll 9s linear infinite;
     }
     /* static noise - tiled SVG turbulence, opacity/position jump on a
        stepped timer so it flickers between "frames" of noise instead of
        smoothly drifting like a texture pan. screen blend is fine here
        (unlike overlay above) since screen only ever brightens, so it
-       still shows against a dark backdrop - just needed more opacity. */
+       still shows against a dark backdrop. Pulled back from the first
+       pass (0.16-0.24 opacity, 0.4s cycle) - that read as active TV
+       snow, too busy for a resting panel; low and slow now, just enough
+       grain to feel like a dying signal rather than a loud one. */
     .game-dialog-panel::after{
       content:''; position:absolute; inset:-20%; z-index:3; pointer-events:none;
       background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-      opacity:0.16; mix-blend-mode:screen;
-      animation: dialog-static-flicker 0.4s steps(2) infinite;
+      opacity:0.05; mix-blend-mode:screen;
+      animation: dialog-static-flicker 1.1s steps(2) infinite;
     }
     .game-dialog-panel > *{ position:relative; z-index:4; }
     @keyframes dialog-scanline-roll{
@@ -105,28 +118,26 @@ function ensureBuilt(){
       100%{ background-position-y:60px; }
     }
     @keyframes dialog-static-flicker{
-      0%{ opacity:0.1; transform:translate(0,0); }
-      50%{ opacity:0.24; transform:translate(-1%,1%); }
-      100%{ opacity:0.13; transform:translate(1%,-1%); }
+      0%{ opacity:0.035; transform:translate(0,0); }
+      50%{ opacity:0.08; transform:translate(-1%,1%); }
+      100%{ opacity:0.045; transform:translate(1%,-1%); }
     }
     /* chromatic-aberration glitch - RGB channel split via layered
        drop-shadows, held mostly at rest (no filter) with brief, jarring
        jolts - same "wrong-but-still, rare flash" language as the
-       safehouse's locked-door glitch treatment, not a constant wobble */
+       safehouse's locked-door glitch treatment, not a constant wobble.
+       Cycle stretched and jolts softened from the first pass - was
+       firing 3x/loop at full strength, closer to a strobe than dread. */
     @keyframes dialog-glitch-shift{
-      0%, 88%, 100%{ filter:none; transform:translate(0,0); }
-      88.5%{ filter:drop-shadow(-3px 0 rgba(255,40,60,0.65)) drop-shadow(3px 0 rgba(40,220,255,0.55)); transform:translate(-3px,0); }
-      89%{ filter:drop-shadow(3px 0 rgba(255,40,60,0.65)) drop-shadow(-3px 0 rgba(40,220,255,0.55)); transform:translate(3px,0); }
-      89.5%{ filter:none; transform:translate(0,0); }
-      94%{ filter:drop-shadow(-4px 0 rgba(255,40,60,0.7)) drop-shadow(4px 0 rgba(40,220,255,0.6)); transform:translate(2px,-1px); }
-      94.4%{ filter:none; transform:translate(0,0); }
+      0%, 96%, 100%{ filter:none; transform:translate(0,0); }
+      96.4%{ filter:drop-shadow(-2px 0 rgba(255,40,60,0.4)) drop-shadow(2px 0 rgba(40,220,255,0.32)); transform:translate(-1.5px,0); }
+      96.8%{ filter:none; transform:translate(0,0); }
     }
     @keyframes dialog-glitch-in{
-      0%{ filter:drop-shadow(-5px 0 rgba(255,40,60,0.8)) drop-shadow(5px 0 rgba(40,220,255,0.7)); transform:translate(-4px,0); }
-      20%{ filter:drop-shadow(5px 0 rgba(255,40,60,0.8)) drop-shadow(-5px 0 rgba(40,220,255,0.7)); transform:translate(4px,0); }
-      40%{ filter:none; transform:translate(0,0); }
-      55%{ filter:drop-shadow(-4px 0 rgba(255,40,60,0.7)) drop-shadow(4px 0 rgba(40,220,255,0.6)); transform:translate(-3px,1px); }
-      70%{ filter:none; transform:translate(0,0); }
+      0%{ filter:drop-shadow(-3px 0 rgba(255,40,60,0.5)) drop-shadow(3px 0 rgba(40,220,255,0.42)); transform:translate(-2px,0); }
+      30%{ filter:none; transform:translate(0,0); }
+      55%{ filter:drop-shadow(-2px 0 rgba(255,40,60,0.4)) drop-shadow(2px 0 rgba(40,220,255,0.32)); transform:translate(-1px,0); }
+      75%{ filter:none; transform:translate(0,0); }
       100%{ filter:none; transform:translate(0,0); }
     }
     .game-dialog-title{
