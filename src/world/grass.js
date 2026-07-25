@@ -429,9 +429,17 @@ function buildMaterial(){
       uBladeWidth: { value: BLADE_WIDTH },
       uMaxBladeHeight: { value: MAX_BLADE_HEIGHT },
       uWindDirection: { value: Math.PI*0.25 },
-      uWindSpeed: { value: 0.12 },
-      uWindNoiseScale: { value: 0.9 },
-      uMaxBendAngle: { value: 20 },
+      // Tuned down from the original 0.12/0.9/20deg pass, which read as a
+      // steady gale (fast per-blade scroll + a wide 20deg swing) rather
+      // than rain-driven grass. Rain pushes blades over in soft, broad
+      // ripples with a small resting sway, not a constant whip - so this
+      // drops the bend angle to a light lean, slows the noise scroll so
+      // gusts roll through rather than flicker, and coarsens the noise
+      // scale so a whole patch leans together instead of every blade
+      // fighting its neighbor independently.
+      uWindSpeed: { value: 0.045 },
+      uWindNoiseScale: { value: 0.4 },
+      uMaxBendAngle: { value: 7 },
       uBaldPatchModifier: { value: 0.5 },
       uFalloffSharpness: { value: 1.6 },
       uHeightNoiseFreq: { value: 1.4 },
