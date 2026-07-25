@@ -31,6 +31,11 @@
 // world rather than a UI layer sitting outside it. Mechanics (id/have/
 // label wiring, what each entry reads off `state`) are unchanged -
 // this is a text-only pass.
+// LORE.length gives the true fragment total instead of a hardcoded
+// number that would silently drift out of sync if data/lore.js ever
+// gains or loses an entry.
+import { LORE } from '../data/lore.js';
+
 const QUESTS = [
   {
     id: 'find-radio',
@@ -66,6 +71,16 @@ const QUESTS = [
     label(state){
       if(state.enteredMap2) return 'gone';
       return state.doorwayLightSeen ? 'walking' : 'not yet';
+    },
+  },
+  {
+    id: 'collect-memories',
+    name(){ return 'pages that aren\'t in the notebook - pick up whatever\'s still lying around'; },
+    have(state){ return state.collected.size >= LORE.length; },
+    label(state){
+      if(state.collected.size >= LORE.length) return 'all found';
+      if(state.collected.size > 0) return `${state.collected.size}/${LORE.length} found`;
+      return 'none yet';
     },
   },
 ];
