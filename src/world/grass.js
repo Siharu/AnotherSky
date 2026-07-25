@@ -425,14 +425,16 @@ export function initGrass(){
 // a true per-blade world-position mask) - consistent with the existing
 // precedent rather than a heavier per-blade solution.
 function isOnPavement(px, pz){
-  const playerAng = Math.atan2(pz, px), playerR = Math.hypot(px, pz);
+  const playerR = Math.hypot(px, pz);
   for(const r of downtownStreetRibbons){
-    let da = Math.abs(playerAng - r.ang) % (Math.PI*2);
-    if(da > Math.PI) da = Math.PI*2 - da;
-    // hw is a straight-line half-width, but da is an angular difference -
-    // approximate the perpendicular distance as playerR*da (arc length),
-    // fine at these radii/widths for a cheap per-frame check.
-    if(playerR >= r.r0 && playerR <= r.r1 && playerR*da < r.hw) return true;
+    // Exact perpendicular distance from (px,pz) to the ray through the
+    // origin at angle r.ang - no angle-wrapping needed, and no arc-length
+    // approximation blowing up near the radial center where streets
+    // converge (that approx treated playerR*da as the width check, which
+    // at small playerR made the angular tolerance huge and swallowed
+    // almost the entire area around downtown's center as "pavement").
+    const perp = Math.abs(px*Math.sin(r.ang) - pz*Math.cos(r.ang));
+    if(playerR >= r.r0 && playerR <= r.r1 && perp < r.hw) return true;
   }
   // exit road: same perpendicular-distance idea, but it's a straight
   // ribbon along a fixed direction rather than radial, so project onto
