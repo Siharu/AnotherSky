@@ -841,6 +841,18 @@ export function getNearbySquallCount(){
   return n;
 }
 
+// Ground wetness: rises while getNearbySquallCount() reports actual rain
+// overhead, decays slowly (not instantly) once it stops, so puddles/wet
+// ground linger for a while after a storm passes instead of drying the
+// moment the last drop falls. Purely a state value here - the visual
+// application (ground/street darkening, puddle opacity) lives in
+// main.js/world/props.js, which already own those materials.
+export function updateGroundWetness(dt){
+  const raining = getNearbySquallCount() > 0;
+  const rate = raining ? dt*0.55 : dt*0.03; // was dt*0.35 - rises over ~2s of steady rain now (was ~3s), still dries out over ~30s once it stops
+  state.groundWetness = THREE.MathUtils.clamp(state.groundWetness + (raining?1:-1)*rate, 0, 1);
+}
+
 // Particle-density accessibility/perf lever (see systems/settings.js).
 // setDrawRange limits how many of the RAIN_COUNT vertices actually get
 // rasterized without touching the simulation above at all - drops
@@ -857,4 +869,42 @@ export function setRainDensity(density){
   ashGeo.setDrawRange(0, activeAshCount);
 }
 
-export { cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat, rain, farRain, dust, ash, updateRain, updateDust, updateAsh };
+/* ---------- BREATH FOG ----------
+   A small camera-facing puff in front of the player, visible when it's
+   actually raining nearby (cold, wet air - reuses getNearbySquallCount(),
+   the same "is it really raining right now" signal the weather label and
+   ground wetness both already use) rather than being always-on regardless
+   of weather. Pulses on its own breathing rhythm rather than a constant
+   fade, so it reads as breath rather than a static fogged patch of air. */
+function breathFogSprite(){
+  const size=64, c=makeCanvas(size), ctx=c.getContext('2d');
+  const g=ctx.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
+  g.addColorStop(0,'rgba(230,230,238,0.9)');
+  g.addColorStop(0.5,'rgba(220,220,230,0.35)');
+  g.addColorStop(1,'rgba(220,220,230,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,size,size);
+  return new THREE.CanvasTexture(c);
+}
+const breathMat = new THREE.SpriteMaterial({ map:breathFogSprite(), transparent:true, depthWrite:false, opacity:0 });
+const breathSprite = new THREE.Sprite(breathMat);
+breathSprite.scale.set(0.5, 0.5, 1);
+scene.add(breathSprite);
+let breathFogPhase = 0;
+function updateBreathFog(dt){
+  const raining = !state.insideSafehouse && getNearbySquallCount() > 0;
+  if(!raining){
+    breathMat.opacity = Math.max(0, breathMat.opacity - dt*1.5); // fades out rather than snapping off if rain stops mid-breath
+    breathFogPhase += dt*0.5;
+  } else {
+    breathFogPhase += dt*0.55; // breaths per second-ish, matches updateBreathing()'s slow resting rate in systems/dread.js
+  }
+  const cycle = (Math.sin(breathFogPhase*Math.PI*2)*0.5+0.5); // 0..1, exhale peak
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+  breathSprite.position.copy(camera.position).addScaledVector(fwd, 0.55);
+  breathSprite.position.y -= 0.08; // sits near mouth height, not dead center of the view
+  if(raining) breathMat.opacity = 0.55 * (0.3 + cycle*0.7);
+  const growth = 0.45 + cycle*0.35;
+  breathSprite.scale.set(growth, growth, 1);
+}
+
+export { cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat, rain, farRain, dust, ash, updateRain, updateDust, updateAsh, updateBreathFog };
