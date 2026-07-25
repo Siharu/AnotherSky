@@ -36,12 +36,12 @@ import { showWhisper } from '../ui/whisper.js';
 let audioCtx = null, masterGain = null, heartGain = null, heartTimer = 0;
 let windGain = null, breathGain = null, interiorGain = null;
 let pattGain = null, washGain = null;
+let chaseGain = null, chaseOsc = null, chaseFilter = null, chaseLfo = null;
 // Base resting gains for the two outdoor rain layers + wind, so the new
 // indoor-muffling tick below has a fixed reference to lerp toward/away
 // from rather than needing to read back whatever value it last set.
 const RAIN_PATT_BASE = 0.22, RAIN_WASH_BASE = 0.3, WIND_BASE = 0.13;
-const INTERIOR_TARGET = 0.5; // interiorGain's resting level once indoors - was created with gain=0 and never touched again anywhere, so the "distinct interior acoustic space" this was built for never actually played
-const INDOOR_OUTDOOR_MUFFLE = 0.22; // outdoor rain/wind heard through walls - muffled, not silent
+const INDOOR_OUTDOOR_MUFFLE = 0.22; // outdoor rain heard through walls - muffled, not silent
 
 export function getAudioCtx(){ return audioCtx; }
 export function ensureAudioCtx(){
@@ -131,30 +131,58 @@ export function initAudio(userVolume){
 
     heartGain = audioCtx.createGain(); heartGain.gain.value=0.0; heartGain.connect(masterGain);
     breathGain = audioCtx.createGain(); breathGain.gain.value=0.6; breathGain.connect(masterGain);
+
+    // Chase drone - the "something is actively hunting you right now"
+    // audio cue (the Ao Oni-style chase stinger) that was entirely
+    // missing: HUNT-state ghuuls fed into the general ambient dread
+    // curve, but there was no dedicated, unmistakable sound tied
+    // specifically to an active hunt closing in. A driving low sawtooth
+    // with a slow pitch wobble, silent by default, only rising via
+    // tickChaseDrone() below as state.huntPanic climbs.
+    chaseOsc = audioCtx.createOscillator(); chaseOsc.type='sawtooth'; chaseOsc.frequency.value=48;
+    chaseFilter = audioCtx.createBiquadFilter(); chaseFilter.type='lowpass'; chaseFilter.frequency.value=220;
+    chaseGain = audioCtx.createGain(); chaseGain.gain.value=0;
+    chaseLfo = audioCtx.createOscillator(); chaseLfo.type='sine'; chaseLfo.frequency.value=5.5; // fast throb, reads as urgency once audible
+    const chaseLfoGain = audioCtx.createGain(); chaseLfoGain.gain.value=0.06;
+    chaseLfo.connect(chaseLfoGain); chaseLfoGain.connect(chaseGain.gain);
+    chaseOsc.connect(chaseFilter); chaseFilter.connect(chaseGain); chaseGain.connect(masterGain);
+    chaseOsc.start(); chaseLfo.start();
   }catch(e){ /* audio unavailable, continue silently */ }
 }
 
-// Indoor/outdoor ambience mix - this was the missing piece the comments
-// on interiorGain/windGain above kept referencing ("gain is driven every
-// frame by distance to SAFEHOUSE_CENTER", "see the wind gain update
-// below") but no such code ever existed anywhere in this file or
-// main.js: interiorGain was created at gain=0 and never touched again,
-// and the outdoor rain/wind layers connected straight to masterGain at
-// a fixed gain with zero indoor/outdoor distinction - rain sounded
-// identical whether you were standing in the open or inside the
-// safehouse. state.insideSafehouse is already set every frame by
-// weather.js's updateRain(), so this just needs to read it and ease the
-// two mixes toward their indoor/outdoor targets - no new call site
-// wiring needed beyond the one tick call in main.js's update loop.
+// Indoor/outdoor rain mix - this was the missing piece the comments on
+// interiorGain kept referencing ("gain is driven every frame by distance
+// to SAFEHOUSE_CENTER") but which turned out to already be handled
+// correctly elsewhere (systems/dread.js's updateDread() owns
+// windGain/interiorGain every frame with its own distance-based logic -
+// see that file). What was actually never touched by anything is these
+// two rain layers: they connected straight to masterGain at a fixed gain
+// with zero indoor/outdoor distinction, so rain sounded identical
+// whether you were standing in the open or inside the safehouse.
+// state.insideSafehouse is already set every frame by weather.js's
+// updateRain(), so this just needs to read it.
 export function tickAmbienceMix(dt){
-  if(!pattGain || !washGain || !windGain || !interiorGain) return;
-  const indoors = state.insideSafehouse;
-  const outdoorMul = indoors ? INDOOR_OUTDOOR_MUFFLE : 1.0;
+  if(!pattGain || !washGain) return;
+  const outdoorMul = state.insideSafehouse ? INDOOR_OUTDOOR_MUFFLE : 1.0;
   const rate = Math.min(1, dt*2.2); // eased over ~0.5s, not snapped - walking through a doorway shouldn't hard-cut the mix
   pattGain.gain.value += (RAIN_PATT_BASE*outdoorMul - pattGain.gain.value) * rate;
   washGain.gain.value += (RAIN_WASH_BASE*outdoorMul - washGain.gain.value) * rate;
-  windGain.gain.value += (WIND_BASE*outdoorMul - windGain.gain.value) * rate;
-  interiorGain.gain.value += ((indoors ? INTERIOR_TARGET : 0) - interiorGain.gain.value) * rate;
+}
+
+// Drives the chase drone from state.huntPanic (see systems/dread.js,
+// which computes it from the nearest actively-HUNTing ghuul's distance -
+// a much closer-range, faster-reacting signal than the general ambient
+// dread curve). Pitch climbs with panic too, not just volume - a chase
+// that's about to end badly should sound different, not just louder.
+export function tickChaseDrone(dt){
+  if(!chaseGain || !chaseOsc) return;
+  const panic = state.huntPanic;
+  const rate = Math.min(1, dt*3); // reacts fast - this needs to feel urgent, not ease in like ambient dread does
+  const targetGain = panic * 0.32;
+  chaseGain.gain.value += (targetGain - chaseGain.gain.value) * rate;
+  const targetFreq = 48 + panic*34;
+  chaseOsc.frequency.value += (targetFreq - chaseOsc.frequency.value) * rate;
+  chaseFilter.frequency.value = 220 + panic*500;
 }
 
 function playHeartbeat(vol){
