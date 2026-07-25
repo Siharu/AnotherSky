@@ -89,7 +89,15 @@ const state = {
   windGust: 0, windGustTimer: 3+Math.random()*4,  // periodic gusts so wind has a felt presence
   forgetting: 0,  // 0 clear -> 1 fully lost; climbs steadily, only pulled back by remembering
   huntPanic: 0, // 0..1 - a HUNTing ghuul's close-range proximity only (see systems/dread.js); reacts fast, unlike the slower ambient state.dread
-  groundWetness: 0 // 0..1 - rises while rain is actually falling nearby, decays slowly afterward so the world stays visibly wet for a while rather than drying the instant rain stops (see sky/weather.js's updateGroundWetness)
+  groundWetness: 0, // 0..1 - rises while rain is actually falling nearby, decays slowly afterward so the world stays visibly wet for a while rather than drying the instant rain stops (see sky/weather.js's updateGroundWetness)
+  /* relay tower connection quest */
+  deadRelayTowers: [],           // [{id,x,z}] - populated once at world-build time (main.js), not persisted itself; positions are static so they're just recomputed on load
+  relayTowersConnected: new Set(), // ids of deadRelayTowers the player has connected their radio to
+  nearDeadRelayId: -1,           // id of the dead relay tower currently in interact range, -1 if none
+  hqTowerUnlocked: false,        // true once all deadRelayTowers are connected - opens the path to the HQ tower
+  nearTV: false,                 // safehouse TV/sticky-note interactable
+  tvStage: 0,                    // 0 = not yet seen, 1 = sticky note read (relay plan), 2 = post-HQ "who are you" beat shown
+  swarmDeathTriggered: false     // one-shot: 4+ HUNTing ghuuls in close range ends the run
 };
 
 const EYE_HEIGHT = 1.65;
