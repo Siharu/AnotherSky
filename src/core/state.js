@@ -87,7 +87,9 @@ const state = {
   warnedBearingExpires:0,
   windX: 0.6, windZ: 0.35, windTarget: 0,  // global wind direction, drifts over time
   windGust: 0, windGustTimer: 3+Math.random()*4,  // periodic gusts so wind has a felt presence
-  forgetting: 0  // 0 clear -> 1 fully lost; climbs steadily, only pulled back by remembering
+  forgetting: 0,  // 0 clear -> 1 fully lost; climbs steadily, only pulled back by remembering
+  huntPanic: 0, // 0..1 - a HUNTing ghuul's close-range proximity only (see systems/dread.js); reacts fast, unlike the slower ambient state.dread
+  groundWetness: 0 // 0..1 - rises while rain is actually falling nearby, decays slowly afterward so the world stays visibly wet for a while rather than drying the instant rain stops (see sky/weather.js's updateGroundWetness)
 };
 
 const EYE_HEIGHT = 1.65;
