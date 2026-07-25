@@ -3,7 +3,7 @@ import { canvas, renderer, baseDPR, scene, FOG_COLOR, camera, clock } from './co
 import {
   skyGradientColors, skyGradientColorsCalm, SKY_CALM, SKY_WRONG, skyColorsAt,
   domeMat, domeMesh,
-  starPoints, starMat, moonMesh, moonMat,
+  starPoints, starMat,
   holeUniforms, holeMaterial, holeMesh, createHoleMaterial,
   MONOLITH_BEARING, MONOLITH_DIST, monolithMat, monolithMesh,
   monolithGlowMat, monolithGlowMesh,
@@ -11,7 +11,8 @@ import {
 } from './sky/sky.js';
 import {
   cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat,
-  updateRain, updateDust, updateAsh, getNearbySquallCount
+  updateRain, updateDust, updateAsh, getNearbySquallCount, updateGroundWetness,
+  updateBreathFog
 } from './sky/weather.js';
 import { makeCanvas, patchFogToDistance } from './render/postprocessing.js';
 import { terrainHeight, groundHeightAt } from './world/terrain.js';
@@ -82,7 +83,7 @@ import {
   addBuilding, updateFacadePoolCounts, updateRelayBeacons,
   activeWindowSpots, rebuildActiveWindowSpots, unitBoxGeo
 } from './world/buildings.js';
-import { addLamp, addStreetRibbon, addRuin, scatterClutter, rubbleGeo, puddleGeo, RUBBLE_COUNT, PUDDLE_COUNT } from './world/props.js';
+import { addLamp, addStreetRibbon, addRuin, scatterClutter, rubbleGeo, puddleGeo, RUBBLE_COUNT, PUDDLE_COUNT, updateWetnessVisuals } from './world/props.js';
 import { updateWorldStream, UNLOAD_RADIUS_CHUNKS, mulberry32 } from './world/streaming.js';
 
 // SAFEHOUSE_CENTER/SAFEHOUSE_HALF_W/SAFEHOUSE_HALF_D used to be declared
@@ -112,7 +113,6 @@ import {
   SAFEHOUSE_CENTER, SAFEHOUSE_HALF_W, SAFEHOUSE_HALF_D,
 } from './world/safehouse.js';
 import { updateDoorTransitions } from './systems/doors.js';
-import { gameConfirm } from './ui/dialog.js';
 
 /* ============================================================
    ANOTHER SKY — atmospheric walking horror
@@ -305,6 +305,8 @@ const groundMat = new THREE.MeshToonMaterial({
   map: groundTexture(), color:0x8a8a94, gradientMap:toonRamp
 });
 patchFogToDistance(groundMat);
+const GROUND_COLOR_DRY = new THREE.Color(0x8a8a94);
+const GROUND_COLOR_WET = new THREE.Color(0x24242b); // was 0x3f3f48 - pushed darker for a much more visible wet-vs-dry contrast
 const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.position.y = 0;
 ground.receiveShadow = true;
@@ -327,6 +329,8 @@ initGrass();
 /* ---------- LIGHTNING ---------- */
 const lightningEl = document.getElementById('lightning-flash');
 const boltCanvas = document.getElementById('lightning-bolt-canvas');
+const windowRainEl = document.getElementById('window-rain');
+let _windowRainShown = false;
 const boltCtx = boltCanvas.getContext('2d');
 let boltDPR = Math.min(window.devicePixelRatio||1, 2);
 function sizeBoltCanvas(){
@@ -2695,10 +2699,10 @@ $('hub-settings').addEventListener('click', ()=>{
   hubOverlay.classList.remove('open'); // hide hub underneath so it doesn't stack with settings
   settingsOverlay.classList.add('open');
 });
-$('hub-load').addEventListener('click', async ()=>{
+$('hub-load').addEventListener('click', ()=>{
   corruptPress($('hub-load'));
   if(!hasSave()){ showHubFlavor('there is nothing here to return to.'); return; }
-  if(!await gameConfirm('Load your last save? Any progress since then will be lost.', 'LOAD SAVE')) return;
+  if(!confirm('Load your last save? Any progress since then will be lost.')) return;
   const raw = (()=>{ try{ return localStorage.getItem(SAVE_KEY); }catch(e){ return null; } })();
   if(!raw) return;
   try{
@@ -2706,9 +2710,9 @@ $('hub-load').addEventListener('click', async ()=>{
     restoreFromSave(JSON.parse(raw));
   }catch(e){ console.error('save data corrupt, ignoring', e); }
 });
-$('hub-quit').addEventListener('click', async ()=>{
+$('hub-quit').addEventListener('click', ()=>{
   corruptPress($('hub-quit'));
-  if(!await gameConfirm('Quit to the title screen? Make sure anything you want kept has been saved.', 'QUIT TO TITLE')) return;
+  if(!confirm('Quit to the title screen? Make sure anything you want kept has been saved.')) return;
   location.reload();
 });
 
@@ -3273,9 +3277,15 @@ function animate(){
     updateExitBlackout(dt);
     updateRain(dt);
     tickAmbienceMix(dt);
+    updateGroundWetness(dt);
+    groundMat.color.copy(GROUND_COLOR_DRY).lerp(GROUND_COLOR_WET, state.groundWetness);
+    updateWetnessVisuals();
     updateWeatherLabel();
     updateDust(dt);
     updateAsh(dt);
+    updateBreathFog(dt);
+    { const showWindowRain = state.insideSafehouse && getNearbySquallCount() > 0;
+      if(showWindowRain !== _windowRainShown){ _windowRainShown = showWindowRain; windowRainEl.classList.toggle('show', showWindowRain); } }
     updateDread(dt);
     updateWhisper(dt);
     updateSky(dt);
@@ -3639,20 +3649,6 @@ function updateSky(dt){
     starMat.uniforms.uCoverage.value += (targetCoverage - starMat.uniforms.uCoverage.value) * Math.min(1, dt*0.8); // eased, not snapped - a squall drifting in/out shouldn't pop the whole sky on/off in one frame
   }
   if(starPoints){ starPoints.position.x = state.playerX; starPoints.position.z = state.playerZ; }
-  if(moonMesh && moonMat){
-    // Recenter to the player like the stars/hole do (same "behaves like sky,
-    // not world" convention) without touching the fixed MOON_DIR height/offset
-    // baked into its position at creation - only x/z track the player.
-    moonMesh.position.x = state.playerX + (moonMesh.userData.baseX ?? (moonMesh.userData.baseX = moonMesh.position.x));
-    moonMesh.position.z = state.playerZ + (moonMesh.userData.baseZ ?? (moonMesh.userData.baseZ = moonMesh.position.z));
-    // Fades out as the sky turns wrong, same curve the hole's disk detail
-    // ramps in on (smoothstep 0.15-0.7) so the moon reads as being consumed
-    // by the hole rather than the two just independently coexisting/fighting
-    // for attention in the same patch of sky.
-    const wt = Math.min(1, Math.max(0, (state.skyWrongness - 0.15) / (0.7 - 0.15)));
-    const targetMoonOpacity = 1.0 - (wt*wt*(3-2*wt)); // manual smoothstep - r128 doesn't have MathUtils.smoothstep
-    moonMat.opacity += (targetMoonOpacity - moonMat.opacity) * Math.min(1, dt*0.8);
-  }
   // the monolith - always the same fixed bearing/distance from the player,
   // by design (see comment at its creation). Faces the camera like the
   // black hole does. Nearly invisible at low dread/wrongness (a shape you
