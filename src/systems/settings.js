@@ -29,7 +29,6 @@ import { deleteSave } from './save.js';
 import { hubOverlay } from '../ui/menu.js';
 import { setGrassQuality } from '../world/grass.js';
 import { setRainDensity } from '../sky/weather.js';
-import { gameConfirm, gameAlert } from '../ui/dialog.js';
 
 const $ = id => document.getElementById(id);
 
@@ -365,8 +364,8 @@ export function closeSettingsOverlay(){
   }
 }
 $('settings-close').addEventListener('click', closeSettingsOverlay);
-$('settings-delete-save').addEventListener('click', async ()=>{
-  if(await gameConfirm('Delete all saved progress? This cannot be undone.', 'ERASE MEMORIES')){
+$('settings-delete-save').addEventListener('click', ()=>{
+  if(confirm('Delete all saved progress? This cannot be undone.')){
     deleteSave();
     // Deleting storage alone wasn't enough: the periodic autosave loop
     // (and pickup-triggered autosaves) keep running for the rest of this
@@ -375,12 +374,12 @@ $('settings-delete-save').addEventListener('click', async ()=>{
     // like it did nothing. Reloading to the title screen (same as Quit to
     // Title) guarantees no live session is left around to resurrect it,
     // and gives a moment of actual on-screen confirmation first.
-    await gameAlert('Save deleted.', 'MEMORIES ERASED');
+    alert('Save deleted.');
     location.reload();
   }
 });
 $('settings-clear-cache').addEventListener('click', async ()=>{
-  if(!await gameConfirm("Clear cached game files and reload? Your save and settings aren't touched - this only clears cached assets, useful if a new version isn't showing up.", 'CLEAR CACHE')) return;
+  if(!confirm("Clear cached game files and reload? Your save and settings aren't touched - this only clears cached assets, useful if a new version isn't showing up.")) return;
   // Deliberately does NOT touch localStorage (save data, settings) -
   // this is for the "I updated the game and the browser is still
   // running old cached JS/assets" case, not a reset. Both branches are
