@@ -33,6 +33,11 @@ import { LORE, LORE_CLUSTER_A, LORE_CLUSTER_B, LORE_CLUSTER_C, LORE_CENTERPIECE 
 import { pickNextNotebookEntry, NOTEBOOK_NOTHING_NEW } from './data/notebook.js';
 import { answeringMachineLines } from './data/dialogue.js';
 import { relayActivationLine, relayReturnCueLine, doorApproachLine, doorOpenPlayerLine, doorOpenRadioLine } from './data/dialogue.js';
+import {
+  playerCallOutLines, playerFearLines, playerLowSanityLines,
+  playerTowerFarLines, playerTowerNearLines, playerTowerUnlockedLines,
+  playerDreadHighLines, playerEyeStormLines
+} from './data/dialogue.js';
 import { startGlitchScramble, stopGlitchScramble } from './ui/credits.js';
 import { flashAutosaveIndicator, minimapCanvas, minimapCtx, radioBtn, radioTicker, updateMinimap, updateWeatherLabel, updateObjectivePanel } from './ui/hud.js';
 import { bigmapCanvas, bigmapCtx, BIG_MAP_WORLD, worldToBig, updateFowAt, drawBigMap } from './ui/bigmap.js';
@@ -1644,6 +1649,109 @@ let radioTowerBeaconMesh, radioTowerHeight, radioTowerBeaconLight, radioTowerPul
   group.position.set(tx, ty, tz);
   scene.add(group);
 }
+/* ---------- DEAD RELAY TOWERS (lore landmarks, non-interactive) ----------
+   Relay Seven (above) is the only tower with any gameplay hooked to it -
+   these eight are the "six relays before this one" lore.js's Relay
+   Seven fragment (and dialogue.js's "relay six, five, four" line) already
+   talk about, finally given a physical presence instead of only being
+   mentioned. Same lattice/leg/ring geometry as Relay Seven so they read
+   as the same make of structure, but built dark and cold: no PA horns
+   (nothing left broadcasting through them), no steady beacon light, no
+   minimap-unlock radius, no updateRadioTower() hook at all - just a
+   scattering of identical dead masts a player can wander past and
+   recognize as "more of those" without any of them doing anything.
+   A couple flicker a dying, irregular red pulse instead of Relay
+   Seven's steady breathing one, like a battery-backup light that's
+   almost out rather than a live signal. */
+const DEAD_RELAY_COUNT = 8;
+const deadRelayFlickerLights = []; // { mesh, light, glow, phase, flickers }
+function buildDeadRelayTower(x, z, flickers){
+  const ty = groundHeightAt(x, z);
+  const group = new THREE.Group();
+  // slightly warmer/rustier than Relay Seven's clean steel - these have
+  // been sitting dead a lot longer.
+  const steelMat = new THREE.MeshToonMaterial({ color:0x232019, gradientMap:toonRamp });
+  patchFogToDistance(steelMat);
+
+  const towerHeight = 46 + Math.random()*10; // shorter/more variable than Relay Seven's fixed 58 - these aren't all the same build year
+  const legRadius = 3.2;
+  const legGeo = new THREE.CylinderGeometry(0.2, 0.3, towerHeight, 6);
+  const tilt = (Math.random()-0.5)*0.05; // barely-there lean, just enough to read as long-neglected rather than freshly modeled
+  for(let i=0;i<4;i++){
+    const ang = (Math.PI/2)*i + Math.PI/4;
+    const leg = new THREE.Mesh(legGeo, steelMat);
+    leg.position.set(Math.cos(ang)*legRadius*0.5, towerHeight/2, Math.sin(ang)*legRadius*0.5);
+    leg.rotation.z = Math.cos(ang)*0.05 + tilt;
+    leg.rotation.x = -Math.sin(ang)*0.05 + tilt;
+    group.add(leg);
+  }
+  const ringCount = 7; // one fewer than Relay Seven's 9 - slightly sparser lattice
+  for(let i=0;i<ringCount;i++){
+    const t = i/(ringCount-1);
+    const y = t*towerHeight;
+    const r = legRadius*0.5*(1-t*0.55) + 0.4;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.05, 4, 8), steelMat);
+    ring.rotation.x = Math.PI/2;
+    ring.position.y = y;
+    group.add(ring);
+  }
+  // narrow mast, no PA horns - nothing left to broadcast through them
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.18,8,6), steelMat);
+  mast.position.y = towerHeight + 4;
+  group.add(mast);
+
+  if(flickers){
+    // dying battery-backup light rather than a steady signal beacon -
+    // amber, not Relay Seven's red, so it's readable at a glance as a
+    // different (lesser) thing even from a distance.
+    const beaconMat = new THREE.MeshBasicMaterial({ color:0xcf8a2e, transparent:true, opacity:0 });
+    const beaconMesh = new THREE.Mesh(new THREE.SphereGeometry(0.4,8,8), beaconMat);
+    beaconMesh.position.y = towerHeight + 8.2;
+    group.add(beaconMesh);
+    const light = new THREE.PointLight(0xcf8a2e, 0, 30, 2);
+    light.position.y = towerHeight + 8.2;
+    group.add(light);
+    const glow = addGlow(group, 0xcf8a2e, 3.2, 0.5);
+    glow.position.y = towerHeight + 8.2;
+    glow.material.opacity = 0;
+    deadRelayFlickerLights.push({ mesh:beaconMesh, light, glow, phase:Math.random()*100 });
+  }
+
+  group.position.set(x, ty, z);
+  scene.add(group);
+}
+{
+  // Spread around the map at a healthy remove from Relay Seven (0,0)
+  // and the safehouse spawn (-60,45) so none of them get mistaken for
+  // either - golden-angle spacing keeps them visually distinct from
+  // each other instead of falling on an obvious ring or grid.
+  const GOLDEN_ANGLE = 2.399963;
+  let placed = 0, attempt = 0;
+  while(placed < DEAD_RELAY_COUNT && attempt < DEAD_RELAY_COUNT*6){
+    const ang = placed*GOLDEN_ANGLE + Math.random()*0.4;
+    const dist = 95 + (placed/(DEAD_RELAY_COUNT-1))*95 + (Math.random()-0.5)*20; // 95..190, inside GROUND_REAL_RADIUS's 220
+    const x = Math.cos(ang)*dist, z = Math.sin(ang)*dist;
+    attempt++;
+    if(Math.hypot(x, z) < 70) continue; // stay clear of Relay Seven
+    if(Math.hypot(x-(-60), z-45) < 60) continue; // stay clear of the safehouse
+    buildDeadRelayTower(x, z, placed % 3 === 0); // every third one gets a dying flicker light, rest are fully dark
+    placed++;
+  }
+}
+function updateDeadRelayFlickers(dt){
+  for(const f of deadRelayFlickerLights){
+    f.phase += dt;
+    // irregular on/off/dim pattern (a couple sines at unrelated
+    // frequencies plus a hard cutoff below zero) rather than the smooth
+    // steady breathing Relay Seven's beacon uses - reads as a light
+    // barely hanging on instead of a working signal.
+    const raw = Math.sin(f.phase*1.7) * Math.sin(f.phase*0.53 + 1.3) - 0.55;
+    const on = Math.max(0, raw);
+    f.mesh.material.opacity = on;
+    f.light.intensity = on * 0.9;
+    f.glow.material.opacity = on * 0.5;
+  }
+}
 function updateRadioTowerBeacon(){
   if(!radioTowerBeaconMesh) return;
   const pulse = 0.55 + Math.sin(performance.now()*0.0022)*0.45;
@@ -1658,6 +1766,7 @@ function updateRadioTowerBeacon(){
 }
 export function updateRadioTower(dt){
   updateRadioTowerBeacon();
+  updateDeadRelayFlickers(dt);
   if(state.minimapUnlocked) return;
   const d = Math.hypot(state.playerX - RADIO_TOWER_POS.x, state.playerZ - RADIO_TOWER_POS.z);
   if(d < RADIO_TOWER_UNLOCK_RADIUS){
@@ -3097,63 +3206,14 @@ async function showLineBox(text, opts){
    call-out once they've been wandering alone for a while, then further
    lines gated by cooldown and colored by what's actually happening
    (something hunting them, low sanity, near/at the tower, etc). */
-const playerCallOutLines = [
-  "anyone left out here? say something.",
-  "i know how this sounds. i'm asking anyway.",
-  "...if you can hear me, i'm not going to hurt you.",
-  "nobody. of course."
-];
-const playerFearLines = [
-  "keep moving. don't need to know what that is to know i don't want it closer.",
-  "stop trying to name it. just move.",
-  "whatever that is, it's not confused about what it's doing. i need to be less confused about what i'm doing.",
-  "i don't have to understand it to know it's wrong. go.",
-  "don't run in a straight line. don't run in a straight line—",
-  "it's not that it's fast. it's that it doesn't stop."
-];
-const playerLowSanityLines = [
-  "i had this figured. i had a plan. where did the plan go.",
-  "that's the third door i've counted twice. or the first door three times. i can't tell anymore.",
-  "focus. if i stop making sense of this, it wins.",
-  "i'm not losing my mind. i'm losing the parts of it i was using to survive.",
-  "i keep filling in the gaps myself. that's the part that scares me — how easy it is.",
-  "i said that already. didn't i say that already."
-];
-const playerTowerFarLines = [
-  "a relay tower. if anything on this continent still talks, it talks through one of those.",
-  "if there's a signal anywhere, it starts there.",
-  "i need eyes on this place. that tower's the closest thing to eyes i've got."
-];
-const playerTowerNearLines = [
-  "please still be standing. please still be more than rust.",
-  "okay. okay, i'm close.",
-  "come on. give me something. anything."
-];
-const playerTowerUnlockedLines = [
-  "now i can see the shape of this place. doesn't make it kinder. just makes it mine to navigate.",
-  "signal's weak but it's something. it's something.",
-  "at least i'm not guessing blind anymore. i'll take it."
-];
-// new: fires once dread crosses the same 0.65 threshold the sky/audio
-// systems already escalate at - the player's voice should break down in
-// step with everything else, not stay calm while the sky bleeds. Kept aimed
-// at the world being wrong, not at a specific thing chasing him - the
-// horror here is the place, not a monster.
-const playerDreadHighLines = [
-  "the sky isn't supposed to look like that. i don't need a word for wrong to know this is wrong.",
-  "it's not hunting me. that's almost worse. this is just what's here now.",
-  "i keep waiting for someone to tell me this isn't normal. there's no one left to tell me anything.",
-  "i don't remember my own name, but i remember skies didn't used to do that. i think. i think i remember that."
-];
-// new: a short reaction the first time the eye-storm event fires - the
-// game had a whole audiovisual set-piece for this with zero player voice
-// acknowledging it, which was part of the dialogue/intensity mismatch
-const playerEyeStormLines = [
-  "that's not stars. those are— okay. okay, don't count them. just move.",
-  "it's not chasing. it's just watching. all of it, at once.",
-  "i don't need to understand this right now. i need to not be under it."
-];
-// pickFrom() now imported from utils/math.js above.
+// All player voice-line pools (playerCallOutLines, playerFearLines,
+// playerLowSanityLines, playerTowerFarLines/NearLines/UnlockedLines,
+// playerDreadHighLines, playerEyeStormLines) now live in data/dialogue.js
+// and are imported above - this used to keep its own separate copies,
+// which meant an edit to one file silently didn't reach the other (see
+// the "i'm not going to hurt you" fix in dialogue.js's history: main.js's
+// copy would have kept using the old line until someone noticed the two
+// files had drifted apart). pickFrom() imported from utils/math.js above.
 function pickSituationalPlayerLine(){
   const anyHunting = ghuulList.some(g=>g.aiState==='HUNT');
   if(anyHunting) return { text: pickFrom(playerFearLines), hold:1600, ransom:true };
