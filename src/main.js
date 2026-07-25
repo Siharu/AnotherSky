@@ -3293,7 +3293,15 @@ function animate(){
     updateDust(dt);
     updateAsh(dt);
     updateBreathFog(dt);
-    { const showWindowRain = state.insideSafehouse && getNearbySquallCount() > 0;
+    { // Was gated on state.insideSafehouse alone, which lit up the streak
+      // overlay across the WHOLE interior - including rooms with no
+      // window at all (only one actually exists: east wall, radio room).
+      // Scope it to actual proximity to that window instead.
+      const winX = SAFEHOUSE_CENTER.x + (SAFEHOUSE_HALF_W-0.02);
+      const winZ = SAFEHOUSE_CENTER.z + (SAFEHOUSE_HALF_D-2.2);
+      const nearWindow = state.insideSafehouse
+        && Math.hypot(state.playerX-winX, state.playerZ-winZ) < 3.5;
+      const showWindowRain = nearWindow && getNearbySquallCount() > 0;
       if(showWindowRain !== _windowRainShown){ _windowRainShown = showWindowRain; windowRainEl.classList.toggle('show', showWindowRain); } }
     updateDread(dt);
     updateWhisper(dt);
