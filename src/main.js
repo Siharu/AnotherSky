@@ -12,7 +12,6 @@ import {
 import {
   cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat,
   updateRain, updateDust, updateAsh, getNearbySquallCount, updateGroundWetness,
-  updateBreathFog
 } from './sky/weather.js';
 import { makeCanvas, patchFogToDistance } from './render/postprocessing.js';
 import { terrainHeight, groundHeightAt } from './world/terrain.js';
@@ -3292,7 +3291,6 @@ function animate(){
     updateWeatherLabel();
     updateDust(dt);
     updateAsh(dt);
-    updateBreathFog(dt);
     { // Was gated on state.insideSafehouse alone, which lit up the streak
       // overlay across the WHOLE interior - including rooms with no
       // window at all (only one actually exists: east wall, radio room).
