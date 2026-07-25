@@ -164,6 +164,19 @@ const STORAGE_DRAWER_POS = {
   x: SAFEHOUSE_CENTER.x + (STORAGE_DIV_X + 2.2),
   z: SAFEHOUSE_CENTER.z + (-2.0)
 };
+// TV + sticky note (main.js's checkTV()/buildTV()) - storage room, against
+// the east wall (SAFEHOUSE_HALF_W), opposite corner from the drawer so the
+// two props don't crowd each other. Previous placement (STORAGE_DIV_X+3.6
+// = 11.6) sat past the actual wall at SAFEHOUSE_HALF_W=11.0 - outside the
+// building entirely, which is why the set ended up facing the wrong way
+// with nothing to actually stand in front of. TV_YAW points the screen
+// west, back into the room, matching TV_POS sitting flush against the
+// east wall.
+const TV_POS = {
+  x: SAFEHOUSE_CENTER.x + (SAFEHOUSE_HALF_W - 0.55),
+  z: SAFEHOUSE_CENTER.z + (-1.2)
+};
+const TV_YAW = -Math.PI/2; // faces -X (west), into the storage room
 // The day the calendar's crossed-off marks stop on - referenced in both
 // checkCalendar()'s and checkStorageDrawer()'s lines in main.js. Picked
 // to read as "recent, not the start of the month" without pinning to a
@@ -655,6 +668,64 @@ function buildSafehouse(){
     const crtBase = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.03, 0.2), beigeMat);
     crtBase.position.set(crtX, deskLegH+deskTopH+0.015, crtZ);
     group.add(crtBase);
+
+    // --- storage room TV (main.js's checkTV()) - a freestanding CRT
+    // set, distinct from the small desk monitor above (that one's
+    // decorative office dressing; this one is the story interactable).
+    // Built to roughly match a chunky 90's/2000s "premium" CRT: deep dark
+    // plastic body tapering slightly toward the back, a silver-ish bevel
+    // ring around the screen, a perforated speaker grille on one side,
+    // and a small control-button strip under the screen. Reuses the same
+    // crtTexture/crtLight-driven screen material as the desk monitor
+    // above (already built by makeCRTScreen() a few lines up) rather
+    // than standing up a second animated-canvas system - both screens
+    // just show the same synced static/broadcast simulation, same as two
+    // sets tuned to the same channel would.
+    {
+      const tvX = SAFEHOUSE_HALF_W - 0.55, tvZ = -1.2; // matches world/safehouse.js's exported TV_POS offset exactly
+      const tv = new THREE.Group();
+      tv.position.set(tvX, 0, tvZ);
+      tv.rotation.y = TV_YAW;
+
+      const standH = 0.42;
+      const stand = new THREE.Mesh(new THREE.BoxGeometry(0.5, standH, 0.42), beigeMat);
+      stand.position.y = standH/2;
+      tv.add(stand);
+
+      const plasticMat = safehouseMat(0x18181a, 0x050505);
+      const bezelMat = safehouseMat(0x2e2e32, 0x0c0c0e);
+      // deep rear body, narrower than the front face - the CRT tube taper
+      const bodyW = 0.62, bodyH = 0.52, bodyD = 0.6;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(bodyW*0.72, bodyH*0.86, bodyD), plasticMat);
+      body.position.set(0, standH + bodyH/2 - 0.02, -0.02);
+      tv.add(body);
+      // front face/bezel - wider and taller than the rear body, screen
+      // sits inset in this
+      const front = new THREE.Mesh(new THREE.BoxGeometry(bodyW, bodyH, 0.1), bezelMat);
+      front.position.set(0, standH + bodyH/2, bodyD/2 - 0.02);
+      tv.add(front);
+      const screenMat2 = new THREE.MeshBasicMaterial({ map: crtTexture, fog:true });
+      patchFogToDistance(screenMat2);
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(bodyW*0.72, bodyH*0.68), screenMat2);
+      screen.position.set(0, standH + bodyH/2 + 0.01, bodyD/2 + 0.031);
+      tv.add(screen);
+      // thin bright bevel ring, just proud of the screen glass - reads as
+      // the chrome-ish trim in the reference photo without a new material
+      const bevel = new THREE.Mesh(new THREE.RingGeometry(bodyW*0.36, bodyW*0.4, 4, 1), safehouseMat(0x9a988e, 0x2c2b26));
+      bevel.position.set(0, standH + bodyH/2 + 0.01, bodyD/2 + 0.028);
+      tv.add(bevel);
+      // speaker grille - perforated dark panel on the body's left side
+      const grille = new THREE.Mesh(new THREE.BoxGeometry(0.03, bodyH*0.7, bodyD*0.55), plasticMat);
+      grille.position.set(-bodyW*0.5+0.015, standH + bodyH/2, -0.05);
+      tv.add(grille);
+      // control button strip under the screen
+      for(let i=0;i<5;i++){
+        const btn = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.02, 0.02), safehouseMat(0x3c3c40, 0x101012));
+        btn.position.set(-bodyW*0.28 + i*0.07, standH + bodyH*0.14, bodyD/2 + 0.06);
+        tv.add(btn);
+      }
+      group.add(tv);
+    }
 
     // low-profile keyboard, angled toward the chair side
     const kb = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.03, 0.12), beigeMat);
@@ -1226,6 +1297,6 @@ export {
   buildSafehouse, buildSafehouseExterior,
   updateDoorFlash, updateSafehouseInterior,
   NOTEBOOK_POS, LOCKED_DOOR_POS, BED_TABLE_POS, SAFEHOUSE_DOOR_YAW,
-  CALENDAR_POS, STORAGE_DRAWER_POS, CALENDAR_LAST_DAY,
+  CALENDAR_POS, STORAGE_DRAWER_POS, CALENDAR_LAST_DAY, TV_POS, TV_YAW,
   EXTERIOR_CENTER,
 };
