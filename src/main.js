@@ -3279,7 +3279,7 @@ function animate(){
     tickAmbienceMix(dt);
     updateGroundWetness(dt);
     groundMat.color.copy(GROUND_COLOR_DRY).lerp(GROUND_COLOR_WET, state.groundWetness);
-    updateWetnessVisuals();
+    updateWetnessVisuals(skyColorsAt(state.skyWrongness).horizon);
     updateWeatherLabel();
     updateDust(dt);
     updateAsh(dt);
