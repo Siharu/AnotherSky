@@ -190,3 +190,96 @@ export const relayReturnCueLine = "...seven, you should head back to wherever yo
 export const doorApproachLine = "...locked. you'd need a key for this. yeah. i remember.";
 export const doorOpenPlayerLine = "no key. it just... stopped being locked. like whatever was holding it shut ran out of reason to.";
 export const doorOpenRadioLine = "...that's us, seven. or - that's someone being generous about what 'us' means. don't spend too long thinking about which.";
+
+// ---------- WAKE-UP: BODY BEAT ----------
+// One extra line for playWakeDialogue() (main.js) - fires right at the
+// very start, before "unknown ceiling", so the physical beat (waking up
+// hurt) lands before the disorientation beat does. Kept as its own
+// export rather than editing the inline array in main.js directly, so
+// every scripted line in the wake sequence has one source-of-truth home
+// the way the rest of this file already works.
+export const wakeBodyAcheLine = "...agh. my whole body hurts.";
+
+// ---------- RADIO PICKUP EXCHANGE ----------
+// Replaces the old single "...a radio. still has weight to it." pickup
+// line + the deterministic "note taped to the back" tutorial hook. That
+// hook is retired now that the safehouse TV/sticky-note beat (below)
+// carries the "find the relay towers" instruction instead - this
+// sequence just covers the actual physical beat of finding and trying
+// the radio, unresolved on purpose (radioPickupNoAnswerLine confirms
+// nobody answers back yet, rather than a note doing the telling).
+export const radioPickupFloatingLine = "huh... why is that radio floating?";
+export const radioPickupTryLine = "...does this thing even work?";
+export const radioPickupCallLine = "hello? can you guys hear me?";
+export const radioPickupNoAnswerLine = "...hm. guess this thing's one-sided.";
+export const radioPickupCheckRoomsLine = "i should check the other rooms.";
+
+// ---------- SAFEHOUSE TV / STICKY NOTE ----------
+// A new interactable (main.js/world/safehouse.js's TV_POS): first visit
+// plays the room-description beat and turns the TV on to static; the
+// sticky note beside it is a second, separate interaction (same prop,
+// second read) that actually states the objective in-world instead of
+// the objective panel just appearing with no diegetic reason. Written to
+// answer the exact question the panel text otherwise leaves open -
+// "why towers, plural" - without over-explaining REDACTED, which stays
+// a redaction on purpose (matches the sky/lore convention elsewhere of
+// withholding rather than resolving).
+export const tvRoomDescriptionLines = [
+  "this room's dustier than the others. damp, too - like nobody's used it in years.",
+  "surprised the tv even still gets power. everything on it is static."
+];
+export const tvStickyNoteLine = "...sticky note, taped to the frame. \"reconnect all relay towers - link went down after REDACTED.\" the rest of that word's scratched out, hard enough to tear the paper.";
+export const tvStickyNoteFollowupLine = "all of them. not just the one on the ridge. there's more of these things standing out there.";
+
+// ---------- RELAY TOWER CONNECTION QUEST ----------
+// One flavor line per dead relay a player connects their radio to
+// (main.js's connectDeadRelay()) - not numbered 1:1 to a specific
+// tower, just pulled in order so the run of lines reads as the player
+// getting steadily more unsettled by how many of these there turn out
+// to be, then closing on the last one differently once hqTowerUnlocked
+// actually flips true.
+export const relayConnectLines = [
+  "...this one's further gone than the first. still took the signal, though.",
+  "another one. how many of these are out here.",
+  "same lattice, same dead horn cluster. different rust pattern. that's the only thing that's different.",
+  "connected. i don't know what i'm connecting it to anymore.",
+  "i keep expecting one of these to answer back different. none of them do.",
+  "six now. i've stopped being surprised and started just counting.",
+  "almost done. i can feel it in how the static's changed - fuller, somehow. wronger.",
+];
+export const relayConnectFinalLine = "...that's all of them. eight dead relays, one live one, and now something's finally lit up out past all of it. i can see it from here. i couldn't see it from here before.";
+
+// ---------- HQ TOWER ----------
+// The giant tenth mast (main.js's HQ_TOWER_POS) - always visible at a
+// distance, deliberately unreachable (a soft collision wall) until
+// hqTowerUnlocked flips true once every dead relay's connected.
+export const hqApproachBlockedLines = [
+  "it's not getting any closer. i've been walking straight at it.",
+  "something about the ground out there doesn't want me on it yet.",
+  "wrong direction, apparently. or wrong time. same difference right now."
+];
+export const hqApproachUnlockedLine = "...it's letting me through now. i don't love what that implies about who's been deciding until this point.";
+
+// ---------- RETURN TO SAFEHOUSE: "WHO ARE YOU" BEAT ----------
+// Fires once (main.js) after hqTowerUnlocked and the player heads back
+// to the safehouse - the TV, previously just static, says something for
+// the first time. state.tvStage tracks this as a one-shot separate from
+// the earlier sticky-note read.
+export const tvWhoAreYouLine = "...who are you?";
+export const tvWhoAreYouPlayerLine = "i don't - i don't know. i don't know who i am.";
+export const tvStickyNoteHQLine = "...second note, older, under the first one. \"plan: reach HQ relay, pull the real logs.\" the paper's gone soft and yellow. this one's been here a long time.";
+
+// ---------- GHUUL SWARM DEATH ----------
+// One-shot, checked in main.js when 4+ HUNT-state ghuuls are all within
+// close range of the player at once. Deliberately not addressed to the
+// player character at all - these read as something else's voice
+// (closer to radioPhantomLines' register than anything the player or
+// Relay Seven would say), the same "wrong in a way you can't rationalize
+// away" move radioPhantomLines already uses.
+export const swarmDeathLines = [
+  "looks like you couldn't fix it either.",
+  "maybe the next one can.",
+  "the world doesn't care who changes it.",
+  "the signal ruined you.",
+  "they were once like you."
+];
