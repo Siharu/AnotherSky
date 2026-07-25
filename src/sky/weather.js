@@ -420,6 +420,47 @@ for(let c=0;c<RAIN_CELL_COUNT;c++){
   rainCellZ[c] = Math.sin(rainCellPhase[c])*rainCellOrbit[c];
 }
 const rainDropCell = new Uint8Array(RAIN_COUNT);
+
+// Storm front: the six ambient cells above only ever drift in slow
+// circles around the player - every one always behaves identically, so
+// nothing ever reads as "a storm actually moving through here", just
+// generic ambient scatter. Periodically, one cell is pulled out of its
+// orbit, given a much bigger patch radius, and swept in a straight line
+// across the player's vicinity over ~16-30s before handing back to
+// normal orbiting behavior. getNearbySquallCount()/ground wetness/the
+// HUD weather label all key off rainCellX/Z/R already, so a sweeping
+// storm cell naturally spikes all three as it passes - no separate
+// plumbing needed for "the storm is here right now" to register.
+let stormCellIdx = -1;
+let stormTimer = 25 + Math.random()*45;
+let stormAngle = 0, stormProgress = 0, stormDuration = 0, stormOrigR = 0;
+const STORM_SWEEP_DIST = RAIN_RADIUS*1.6;
+function updateStormFront(dt){
+  if(stormCellIdx === -1){
+    stormTimer -= dt;
+    if(stormTimer <= 0){
+      stormCellIdx = Math.floor(Math.random()*RAIN_CELL_COUNT);
+      stormAngle = Math.random()*Math.PI*2;
+      stormDuration = 16 + Math.random()*14;
+      stormProgress = 0;
+      stormOrigR = rainCellR[stormCellIdx];
+      rainCellR[stormCellIdx] = stormOrigR * 2.4; // visibly heavier patch while it's the storm front
+    }
+    return;
+  }
+  stormProgress += dt / stormDuration;
+  const t = stormProgress*2 - 1; // -1..1, sweeps straight across the player's vicinity
+  rainCellX[stormCellIdx] = Math.cos(stormAngle)*STORM_SWEEP_DIST*t;
+  rainCellZ[stormCellIdx] = Math.sin(stormAngle)*STORM_SWEEP_DIST*t;
+  if(stormProgress >= 1){
+    rainCellR[stormCellIdx] = stormOrigR; // restore original patch size
+    // resync this cell's orbit phase to wherever the sweep left it, so
+    // handing back to normal orbiting doesn't visibly teleport the patch
+    rainCellPhase[stormCellIdx] = Math.atan2(rainCellZ[stormCellIdx], rainCellX[stormCellIdx]);
+    stormCellIdx = -1;
+    stormTimer = 35 + Math.random()*55;
+  }
+}
 const rainGeo = new THREE.BufferGeometry();
 const rainPos = new Float32Array(RAIN_COUNT*3);
 const rainVel = new Float32Array(RAIN_COUNT);
@@ -739,10 +780,12 @@ function updateRain(dt){
   // patches roam independently instead of the whole disc moving as one
   // block. Wind gives the patches a visible push too.
   for(let c=0;c<RAIN_CELL_COUNT;c++){
+    if(c === stormCellIdx) continue; // driven by updateStormFront() below instead
     rainCellPhase[c] += rainCellSpeed[c]*dt;
     rainCellX[c] = Math.cos(rainCellPhase[c])*rainCellOrbit[c] + windX*6.0;
     rainCellZ[c] = Math.sin(rainCellPhase[c])*rainCellOrbit[c] + windZ*6.0;
   }
+  updateStormFront(dt);
 
   for(let i=0;i<activeRainCount;i++){
     const idx=i*3;
