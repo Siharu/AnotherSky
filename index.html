@@ -1550,6 +1550,27 @@
     background:radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.85) 100%);
     opacity:.55;
   }
+  /* Window rain streaks: cheap screen-space stand-in for real per-window
+     shader work - two overlapping repeating-linear-gradients at slightly
+     different angles/speeds read as streaking droplets well enough at
+     the low opacity this sits at, animated via background-position
+     rather than per-frame JS style writes (main.js only toggles the
+     .show class, once, when indoor+raining state actually changes). */
+  #window-rain{
+    position:fixed; inset:0; z-index:14; pointer-events:none; opacity:0;
+    background:
+      repeating-linear-gradient(100deg, rgba(230,230,240,0.06) 0 2px, transparent 2px 60px),
+      repeating-linear-gradient(96deg, rgba(230,230,240,0.04) 0 1px, transparent 1px 90px);
+    background-size: 140% 220%, 160% 260%;
+    mix-blend-mode:screen;
+    transition:opacity 1.4s ease;
+    animation: windowRainDrift 7s linear infinite;
+  }
+  #window-rain.show{ opacity:0.6; }
+  @keyframes windowRainDrift{
+    0%{ background-position: 0 -20%, 0 -10%; }
+    100%{ background-position: 0 40%, 0 60%; }
+  }
   #dread-tint{
     position:fixed; inset:0; z-index:16; pointer-events:none; background:rgba(90,10,10,0);
     mix-blend-mode:multiply; transition:background .3s ease;
@@ -2461,6 +2482,7 @@
 </div>
 
 <div id="vignette"></div>
+<div id="window-rain"></div>
 <div id="dread-tint"></div>
 <div id="lightning-flash"></div>
 <canvas id="lightning-bolt-canvas"></canvas>
