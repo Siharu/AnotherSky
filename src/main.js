@@ -703,9 +703,18 @@ scene.add(eyeGlowMesh);
 // it doesn't drift on a slow orbit - it's somewhere else every time it
 // blinks, so the sky never feels safe to stare at in any one direction
 function rollEyeSpot(){
+  // Fixed world position, resolved once at roll time - not an ang/radius
+  // pair re-applied to state.playerX/playerZ every frame. That version
+  // looked like it should "hold still" (the whole point of this eye vs.
+  // the drifting sky shapes) but actually re-centered on the player each
+  // frame, so it silently followed the player around instead - it never
+  // held still at all, it just always looked roughly the same distance
+  // away regardless of where the player walked.
+  const ang = Math.random()*Math.PI*2;
+  const radius = 90 + Math.random()*90;
   return {
-    ang: Math.random()*Math.PI*2,
-    radius: 90 + Math.random()*90,
+    x: state.playerX + Math.cos(ang)*radius,
+    z: state.playerZ + Math.sin(ang)*radius,
     height: 45 + Math.random()*70
   };
 }
@@ -3840,7 +3849,12 @@ function updateSky(dt){
         // relocate before it opens - it was never "there" a moment ago
         Object.assign(eyeState, rollEyeSpot());
         // the bolder the dread, the more likely it dares to appear close
-        if(Math.random() < boldness*0.35) eyeState.radius *= 0.45;
+        if(Math.random() < boldness*0.35){
+          // pull the just-rolled spot closer in by scaling its offset
+          // from the player at roll time, rather than a stored radius
+          eyeState.x = state.playerX + (eyeState.x - state.playerX)*0.45;
+          eyeState.z = state.playerZ + (eyeState.z - state.playerZ)*0.45;
+        }
       }
       eyeState.timer = opening
         ? THREE.MathUtils.lerp(0.5, 2.2, boldness) + Math.random()*0.6   // held open
@@ -3849,11 +3863,7 @@ function updateSky(dt){
     // snaps open fast (a shock), snaps shut even faster (it noticed you)
     const rate = eyeState.target>eyeState.open ? 6.0 : 11.0;
     eyeState.open = THREE.MathUtils.lerp(eyeState.open, eyeState.target, Math.min(1, dt*rate));
-    eyeMesh.position.set(
-      state.playerX + Math.cos(eyeState.ang)*eyeState.radius,
-      eyeState.height,
-      state.playerZ + Math.sin(eyeState.ang)*eyeState.radius
-    );
+    eyeMesh.position.set(eyeState.x, eyeState.height, eyeState.z);
     // a small twitch on the open axis while it's open - unsteady, not serene
     const twitch = eyeState.open>0.05 ? Math.sin(skyClock*13.0)*0.015*eyeState.open : 0;
     eyeMesh.lookAt(camera.position);
