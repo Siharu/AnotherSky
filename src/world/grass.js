@@ -316,16 +316,36 @@ void main(){
   // same practical effect as toggling visibility, just per-blade since
   // this mesh (unlike rain's own Points object) has no single flag to flip.
   if(uInsideSafehouse > 0.5) bladeHeight = 0.0;
-  // per-blade pavement check, this blade's own worldPos - not the player's
+  // Per-blade pavement check, this blade's own worldPos (not the
+  // player's). Was a hard binary cut (bladeHeight = 0.0 inside, full
+  // height right outside) - functionally correct but visually reads as
+  // an unnaturally clean, ruler-straight edge, like a mowed line rather
+  // than grass actually meeting a road. This softens it into a ~0.9-unit
+  // transition band (pavementFactor smoothsteps 0->1 across it) and adds
+  // the same per-blade noise thinning the patch's outer edge already
+  // uses, so the last row of grass along a street edge looks clumpy/
+  // patchy rather than machine-cut.
+  const float PAVE_FALLOFF = 0.9;
+  float pavementFactor = 1.0;
   float blR = length(worldPos.xz);
   for(int i=0; i<MAX_STREETS; i++){
     if(float(i) >= uStreetCount) break;
     float perp = abs(worldPos.x*sin(uStreetAngles[i]) - worldPos.z*cos(uStreetAngles[i]));
-    if(blR >= uStreetR0 && blR <= uStreetR1 && perp < uStreetHw){ bladeHeight = 0.0; }
+    float inRange = step(uStreetR0, blR) * step(blR, uStreetR1);
+    float f = mix(1.0, smoothstep(uStreetHw - PAVE_FALLOFF, uStreetHw + PAVE_FALLOFF, perp), inRange);
+    pavementFactor = min(pavementFactor, f);
   }
   float exAlong = worldPos.x*uExitDirX + worldPos.z*uExitDirZ;
   float exAcross = -worldPos.x*uExitDirZ + worldPos.z*uExitDirX;
-  if(exAlong >= uExitStart && exAlong <= uExitEnd && abs(exAcross) < uExitHalfWidth) bladeHeight = 0.0;
+  float exInRange = step(uExitStart, exAlong) * step(exAlong, uExitEnd);
+  float exF = mix(1.0, smoothstep(uExitHalfWidth - PAVE_FALLOFF, uExitHalfWidth + PAVE_FALLOFF, abs(exAcross)), exInRange);
+  pavementFactor = min(pavementFactor, exF);
+  // clumpy thinning right at the transition, same technique as the
+  // patch's own outer-edge falloff above - concentrates bald/thin blades
+  // right at the road edge instead of a uniform smooth fade
+  bladeHeight -= heightNoise.g * uBaldPatchModifier * (1.0-pavementFactor);
+  bladeHeight *= pavementFactor;
+  bladeHeight = max(bladeHeight, 0.0);
 
   float isTop = color.g;                                    // 1 at the tip, 0 at either base vertex
   float side  = (color.r > 0.05) ? 1.0 : (color.b > 0.05) ? -1.0 : 0.0; // which base corner
