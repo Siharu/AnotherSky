@@ -920,7 +920,7 @@ export function setRainDensity(density){
    of weather. Pulses on its own breathing rhythm rather than a constant
    fade, so it reads as breath rather than a static fogged patch of air. */
 function breathFogSprite(){
-  const size=128, c=makeCanvas(size), ctx=c.getContext('2d');
+  const size=192, c=makeCanvas(size), ctx=c.getContext('2d');
   const cx=size/2, cy=size/2;
   // Several overlapping soft blobs, each offset/sized/rotated slightly
   // differently, instead of one clean radial gradient - a single uniform
@@ -975,11 +975,19 @@ function updateBreathFog(dt){
   // reading as a giant pulsing flash glued to the camera rather than a
   // small puff of breath. Pushed further out and shrunk so its angular
   // size on screen actually reads as "small, near the mouth."
-  breathSprite.position.copy(camera.position).addScaledVector(fwd, 1.3);
+  // Scale and distance both matter here, not just distance: the
+  // previous pass shrank scale down at the same time distance went up,
+  // which kept the angular footprint (and therefore on-screen pixel
+  // size) so small the wispy texture just got minified back into a
+  // plain blurry ball - no resolution left for the detail to read.
+  // This keeps the angular size moderate (visible, not screen-filling)
+  // but large enough on-screen that the ragged/layered texture actually
+  // shows instead of blurring away.
+  breathSprite.position.copy(camera.position).addScaledVector(fwd, 1.1);
   breathSprite.position.y -= 0.08; // sits near mouth height, not dead center of the view
   breathSprite.material.rotation = breathFogPhase*0.35; // slow drift so the wispy texture isn't static
-  if(raining) breathMat.opacity = 0.4 * (0.3 + cycle*0.7);
-  const growth = 0.14 + cycle*0.1;
+  if(raining) breathMat.opacity = 0.45 * (0.3 + cycle*0.7);
+  const growth = 0.32 + cycle*0.2;
   breathSprite.scale.set(growth, growth, 1);
 }
 
