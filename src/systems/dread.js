@@ -34,7 +34,7 @@ import { ghuulList } from '../entities/ghuuls.js';
 import { lamps } from '../world/worldData.js';
 import { settingsBrightness } from './settings.js';
 import {
-  getAudioCtx, tickHeartbeat, getWindGain, getInteriorGain, playBreath
+  getAudioCtx, tickHeartbeat, getWindGain, getInteriorGain, playBreath, tickChaseDrone
 } from './audio.js';
 import { updateWhisperCooldown } from '../ui/whisper.js';
 import { SAFEHOUSE_CENTER } from '../world/safehouse.js';
@@ -58,11 +58,22 @@ let _lastAberrDx = null, _lastBurstDy = null, _lastTearScale = null, _lastFilter
 
 export function updateDread(dt){
   let dist = Infinity;
+  let huntDist = Infinity;
   for(const g of ghuulList){
     const d = Math.hypot(g.x-state.playerX, g.z-state.playerZ);
     if(d<dist) dist = d;
+    if(g.aiState==='HUNT' && d<huntDist) huntDist = d;
   }
   const proximityTarget = THREE.MathUtils.clamp(1 - (dist-6)/45, 0, 1);
+  // Steep, close-range only (starts around 18 units, maxes out by ~2) -
+  // an actively hunting ghuul needs to be genuinely closing the distance
+  // before this kicks in, not just "somewhere on the map and technically
+  // in HUNT state". Eases in/out fast (see the tick below) since a real
+  // chase needs to feel immediate, not build over several seconds the
+  // way ambient dread does.
+  const huntPanicTarget = huntDist===Infinity ? 0 : THREE.MathUtils.clamp(1 - (huntDist-2)/16, 0, 1);
+  state.huntPanic += (huntPanicTarget - state.huntPanic) * Math.min(1, dt*3.5);
+  tickChaseDrone(dt);
   // Lamps are real 3D point lights with their own falloff, so standing next
   // to one already lights the immediate area correctly - but the vignette/
   // dread-tint are flat full-screen overlays layered on top with no idea
@@ -111,8 +122,8 @@ export function updateDread(dt){
   state.zoneCalm += ((isInSafeZone(state.playerX, state.playerZ)?1:0) - state.zoneCalm)*dt*2.5;
   const calm = Math.min(1, state.safehouseCalm + state.lampCalm*0.7 + state.zoneCalm*0.85);
 
-  vignetteEl.style.opacity = ((0.62 + state.dread*0.5) * (1 - calm*0.65)).toFixed(2); // was 0.5/0.4 - extreme atmosphere pass: darker floor, steeper climb with dread
-  dreadTintEl.style.background = `rgba(90,10,10,${(state.dread*0.36*(1-calm*0.8)).toFixed(2)})`; // was 0.28
+  vignetteEl.style.opacity = ((0.62 + state.dread*0.5 + state.huntPanic*0.55) * (1 - calm*0.65)).toFixed(2); // was 0.5/0.4 - extreme atmosphere pass: darker floor, steeper climb with dread; huntPanic term added for an active close chase specifically
+  dreadTintEl.style.background = `rgba(90,10,10,${(state.dread*0.36*(1-calm*0.8) + state.huntPanic*0.3).toFixed(2)})`; // was 0.28
 
   // chromatic-aberration / signal-tear glitch, layered on top of the
   // existing saturate/contrast dread filter. A small ambient RGB split is
@@ -161,7 +172,7 @@ export function updateDread(dt){
     tearDisplaceEl.setAttribute('scale', tearScaleStr);
     _lastTearScale = tearScaleStr;
   }
-  const filterStr = `url(#chromaGlitch) saturate(${(1-0.4*dreadForFilter).toFixed(2)}) contrast(${(1+0.25*dreadForFilter).toFixed(2)}) brightness(${settingsBrightness})`;
+  const filterStr = `url(#chromaGlitch) saturate(${(1-0.4*dreadForFilter).toFixed(2)}) contrast(${(1+0.25*dreadForFilter).toFixed(2)}) blur(${(state.huntPanic*2.5).toFixed(2)}px) brightness(${settingsBrightness})`;
   if(filterStr !== _lastFilterStr){
     canvas.style.filter = filterStr;
     _lastFilterStr = filterStr;
@@ -171,7 +182,7 @@ export function updateDread(dt){
 
   updateWhisperCooldown(dt, state.dread);
 
-  { const wg = getWindGain(); if(wg) wg.gain.value = 0.13 + state.windGust*0.22; }
+  { const wg = getWindGain(); if(wg) wg.gain.value = (0.13 + state.windGust*0.22) * (1 - calm*0.85); }
   { const ig = getInteriorGain();
     if(ig){
       const dHouse = Math.hypot(state.playerX-SAFEHOUSE_CENTER.x, state.playerZ-SAFEHOUSE_CENTER.z);
