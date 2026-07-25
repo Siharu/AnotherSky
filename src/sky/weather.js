@@ -912,83 +912,11 @@ export function setRainDensity(density){
   ashGeo.setDrawRange(0, activeAshCount);
 }
 
-/* ---------- BREATH FOG ----------
-   A small camera-facing puff in front of the player, visible when it's
-   actually raining nearby (cold, wet air - reuses getNearbySquallCount(),
-   the same "is it really raining right now" signal the weather label and
-   ground wetness both already use) rather than being always-on regardless
-   of weather. Pulses on its own breathing rhythm rather than a constant
-   fade, so it reads as breath rather than a static fogged patch of air. */
-function breathFogSprite(){
-  const size=192, c=makeCanvas(size), ctx=c.getContext('2d');
-  const cx=size/2, cy=size/2;
-  // Several overlapping soft blobs, each offset/sized/rotated slightly
-  // differently, instead of one clean radial gradient - a single uniform
-  // circle growing/shrinking on the breathing cycle reads as a light
-  // blinking, not smoke dispersing. Layering uneven, ragged puffs gives
-  // it real internal density variation and an irregular silhouette.
-  ctx.globalCompositeOperation = 'lighter';
-  const blobs = 6;
-  for(let i=0;i<blobs;i++){
-    const ang = (i/blobs)*Math.PI*2 + Math.random()*0.6;
-    const dist = (i===0?0:size*0.14) * Math.random();
-    const bx = cx + Math.cos(ang)*dist, by = cy + Math.sin(ang)*dist*0.7;
-    const r = size*(0.22 + Math.random()*0.16);
-    const g = ctx.createRadialGradient(bx,by,0,bx,by,r);
-    const a = 0.28 + Math.random()*0.22;
-    g.addColorStop(0, `rgba(225,226,232,${a})`);
-    g.addColorStop(0.55, `rgba(215,217,226,${a*0.4})`);
-    g.addColorStop(1, 'rgba(215,217,226,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.ellipse(bx, by, r, r*(0.75+Math.random()*0.3), Math.random()*Math.PI, 0, Math.PI*2); ctx.fill();
-  }
-  ctx.globalCompositeOperation = 'source-over';
-  // ragged edge cutouts so the silhouette itself isn't a clean disc
-  ctx.globalCompositeOperation = 'destination-out';
-  for(let i=0;i<10;i++){
-    const ang = Math.random()*Math.PI*2, dist = size*(0.28+Math.random()*0.22);
-    const x = cx+Math.cos(ang)*dist, y = cy+Math.sin(ang)*dist*0.7;
-    const r = size*(0.05+Math.random()*0.08);
-    ctx.fillStyle = `rgba(0,0,0,${0.3+Math.random()*0.4})`;
-    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
-  }
-  ctx.globalCompositeOperation = 'source-over';
-  return new THREE.CanvasTexture(c);
-}
-const breathMat = new THREE.SpriteMaterial({ map:breathFogSprite(), transparent:true, depthWrite:false, opacity:0 });
-const breathSprite = new THREE.Sprite(breathMat);
-breathSprite.scale.set(0.5, 0.5, 1);
-scene.add(breathSprite);
-let breathFogPhase = 0;
-function updateBreathFog(dt){
-  const raining = !state.insideSafehouse && getNearbySquallCount() > 0;
-  if(!raining){
-    breathMat.opacity = Math.max(0, breathMat.opacity - dt*1.5); // fades out rather than snapping off if rain stops mid-breath
-    breathFogPhase += dt*0.5;
-  } else {
-    breathFogPhase += dt*0.55; // breaths per second-ish, matches updateBreathing()'s slow resting rate in systems/dread.js
-  }
-  const cycle = (Math.sin(breathFogPhase*Math.PI*2)*0.5+0.5); // 0..1, exhale peak
-  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
-  // was 0.55 units out with up to 0.8 scale - at that distance a sprite
-  // that size fills a huge chunk of the view (roughly 50+ degrees),
-  // reading as a giant pulsing flash glued to the camera rather than a
-  // small puff of breath. Pushed further out and shrunk so its angular
-  // size on screen actually reads as "small, near the mouth."
-  // Scale and distance both matter here, not just distance: the
-  // previous pass shrank scale down at the same time distance went up,
-  // which kept the angular footprint (and therefore on-screen pixel
-  // size) so small the wispy texture just got minified back into a
-  // plain blurry ball - no resolution left for the detail to read.
-  // This keeps the angular size moderate (visible, not screen-filling)
-  // but large enough on-screen that the ragged/layered texture actually
-  // shows instead of blurring away.
-  breathSprite.position.copy(camera.position).addScaledVector(fwd, 1.1);
-  breathSprite.position.y -= 0.08; // sits near mouth height, not dead center of the view
-  breathSprite.material.rotation = breathFogPhase*0.35; // slow drift so the wispy texture isn't static
-  if(raining) breathMat.opacity = 0.45 * (0.3 + cycle*0.7);
-  const growth = 0.32 + cycle*0.2;
-  breathSprite.scale.set(growth, growth, 1);
-}
+// ---------- BREATH FOG: removed ----------
+// Was a camera-facing puff meant to read as cold breath while it's
+// raining. Went through a few passes (distance/scale rebalancing,
+// wispy multi-blob texture) trying to get it to read as smoke instead
+// of a pulsing light, but it never landed - pulled entirely rather than
+// keep iterating on an effect that isn't working.
 
-export { cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat, rain, farRain, dust, ash, updateRain, updateDust, updateAsh, updateBreathFog };
+export { cloudLayer, cloudLayer2, cloudMat, cloudMat2, dripLayer, dripMat, rain, farRain, dust, ash, updateRain, updateDust, updateAsh };
