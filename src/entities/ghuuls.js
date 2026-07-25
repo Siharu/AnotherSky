@@ -125,6 +125,7 @@ const GHUUL_FRAGMENT_SHADER = `
   uniform float uOpacity;
   uniform float uTime;
   uniform float uGlitch;
+  uniform vec3 uTint;
   float hash(float n){ return fract(sin(n*127.1)*43758.5453); }
   void main(){
     float row = floor(vUv.y*90.0);
@@ -134,7 +135,7 @@ const GHUUL_FRAGMENT_SHADER = `
     float r = texture2D(uMap, uv + vec2(split,0.0)).a;
     float g = texture2D(uMap, uv).a;
     float b = texture2D(uMap, uv - vec2(split,0.0)).a;
-    vec3 col = vec3(r*0.9, g*0.95, b);
+    vec3 col = vec3(r*0.9, g*0.95, b) * uTint;
     float flicker = 0.7 + 0.3*sin(uTime*40.0) * step(0.5, hash(floor(uTime*16.0)));
     float a = max(r,max(g,b)) * uOpacity * mix(1.0, flicker, uGlitch);
     gl_FragColor = vec4(col, a);
@@ -146,15 +147,41 @@ function getGhuulTexture(){
   return _sharedGhuulTexture;
 }
 
+// Every ghuul used to be visually and behaviorally identical - same
+// shared texture, same fixed HUNT/ALERT speeds, same size, nothing to
+// tell one apart from another even when several exist at once. This
+// gives each one a distinct color cast (still reads as the same base
+// creature/texture, just a different sickly hue) plus a small, fixed-
+// per-instance speed/size variance - a slower, bigger one behaves
+// differently than a faster, smaller one, not just a recolor.
+const GHUUL_TINTS = [
+  new THREE.Color(0xb9c2b0), // sickly pale green (the original near-white look)
+  new THREE.Color(0x9a7fa8), // bruised violet
+  new THREE.Color(0xac7a6e), // rust/blood-dry red
+  new THREE.Color(0x7f9aa8), // cold pale blue
+];
+let _ghuulTintCursor = 0;
+function nextGhuulTint(){
+  const t = GHUUL_TINTS[_ghuulTintCursor % GHUUL_TINTS.length];
+  _ghuulTintCursor++;
+  return t;
+}
+
 function createGhuul(spawnRadius){
+  const tint = nextGhuulTint();
+  // small, fixed-per-instance variance - picked once at spawn, not
+  // re-rolled - so the same ghuul is consistently a little faster/bigger
+  // or slower/smaller for its whole lifetime, not just visually different.
+  const speedMult = 0.85 + Math.random()*0.3;
+  const scaleMult = 0.9 + Math.random()*0.25;
   const material = new THREE.ShaderMaterial({
     vertexShader: GHUUL_VERTEX_SHADER, fragmentShader: GHUUL_FRAGMENT_SHADER,
-    uniforms:{ uMap:{value:getGhuulTexture()}, uOpacity:{value:0}, uTime:{value:0}, uGlitch:{value:0.2} },
+    uniforms:{ uMap:{value:getGhuulTexture()}, uOpacity:{value:0}, uTime:{value:0}, uGlitch:{value:0.2}, uTint:{value:tint} },
     transparent:true, depthWrite:false, side:THREE.DoubleSide, fog:false
   });
   const group = new THREE.Group();
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.55), material);
-  plane.position.y = 1.28;
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(1.5*scaleMult, 2.55*scaleMult), material);
+  plane.position.y = 1.28*scaleMult;
   group.add(plane);
   group.visible = false; // hidden by default - only shown during a glimpse/hunt window
   scene.add(group);
@@ -162,6 +189,7 @@ function createGhuul(spawnRadius){
   const ax = Math.cos(startAng)*spawnRadius, az = Math.sin(startAng)*spawnRadius;
   return {
     group, material, plane,
+    speedMult, scaleMult,
     x: ax, z: az,
     anchorX: ax, anchorZ: az,
     aiState: 'PATROL',
@@ -197,7 +225,7 @@ export function triggerPhantomSighting(px, pz){
   const x = px + Math.cos(ang)*dist, z = pz + Math.sin(ang)*dist;
   const material = new THREE.ShaderMaterial({
     vertexShader: GHUUL_VERTEX_SHADER, fragmentShader: GHUUL_FRAGMENT_SHADER,
-    uniforms:{ uMap:{value:getGhuulTexture()}, uOpacity:{value:0}, uTime:{value:0}, uGlitch:{value:0.6} },
+    uniforms:{ uMap:{value:getGhuulTexture()}, uOpacity:{value:0}, uTime:{value:0}, uGlitch:{value:0.6}, uTint:{value:GHUUL_TINTS[Math.floor(Math.random()*GHUUL_TINTS.length)]} },
     transparent:true, depthWrite:false, side:THREE.DoubleSide, fog:false
   });
   const plane = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.55), material);
@@ -228,7 +256,7 @@ export function triggerPhantomSighting(px, pz){
 }
 
 const ghuulList = [ createGhuul(65) ];
-let ghuulSpawnThresholds = [3, 6];
+let ghuulSpawnThresholds = [3, 6, 10];
 function maybeSpawnGhuul(){
   const c = state.collected.size;
   if(isInSafeZone(state.playerX, state.playerZ)) return; // the tower keeps something back, including new arrivals
@@ -348,7 +376,7 @@ function updateGhuul(dt, stinger){
         break;
 
       case 'ALERT':
-        ghuulMoveToward(g, g.suspicionX, g.suspicionZ, 1.9, dt);
+        ghuulMoveToward(g, g.suspicionX, g.suspicionZ, 1.9*g.speedMult, dt);
         if(canSee){
           g.aiState='HUNT'; g.timeSinceSeen=0; g.stateTimer=0;
           if(stinger) stinger(); showWhisper('it found you.');
@@ -367,7 +395,7 @@ function updateGhuul(dt, stinger){
 
       case 'HUNT':
         g.lastSeenX=px; g.lastSeenZ=pz;
-        ghuulMoveToward(g, px, pz, 3.5, dt);
+        ghuulMoveToward(g, px, pz, 3.5*g.speedMult, dt);
         if(canSee){
           g.timeSinceSeen=0;
         } else {
@@ -375,18 +403,31 @@ function updateGhuul(dt, stinger){
           if(g.timeSinceSeen>2.4){ g.aiState='SEARCH'; g.searchTimer=0; g.stateTimer=0; }
         }
         if(g.stateTimer>28){ g.aiState='RETREAT'; g.retreatTimer=5+Math.random()*4; g.stateTimer=0; }
+        // actual contact consequence - a HUNTing ghuul closing all the way
+        // to the player used to just keep updating position with nothing
+        // else happening once it arrived. Cooldown-gated (2.2s) so this
+        // reads as a distinct jolt each time it lands, not continuous
+        // noise while the player is pinned against it.
+        if(dist < 1.8 && (state.lastGhuulHitAt===undefined || state.elapsed - state.lastGhuulHitAt > 2.2)){
+          state.lastGhuulHitAt = state.elapsed;
+          state.huntPanic = 1; // instant spike, not eased - a full-black flash on actual contact
+          const pushX = (px-g.x)/dist, pushZ = (pz-g.z)/dist;
+          state.knockback.x += pushX*9; state.knockback.z += pushZ*9;
+          if(stinger) stinger();
+          showWhisper('it touched me.');
+        }
         break;
 
       case 'SEARCH':
         g.searchTimer += dt;
         if(g.searchTimer<3.5){
-          ghuulMoveToward(g, g.lastSeenX, g.lastSeenZ, 2.1, dt);
+          ghuulMoveToward(g, g.lastSeenX, g.lastSeenZ, 2.1*g.speedMult, dt);
         } else {
           if(!g.patrolTarget || Math.hypot(g.x-g.patrolTarget.x, g.z-g.patrolTarget.z)<1.2){
             const ang=Math.random()*Math.PI*2;
             g.patrolTarget={ x:g.lastSeenX+Math.cos(ang)*8, z:g.lastSeenZ+Math.sin(ang)*8 };
           }
-          ghuulMoveToward(g, g.patrolTarget.x, g.patrolTarget.z, 1.6, dt);
+          ghuulMoveToward(g, g.patrolTarget.x, g.patrolTarget.z, 1.6*g.speedMult, dt);
         }
         if(canSee){ g.aiState='HUNT'; g.timeSinceSeen=0; g.stateTimer=0; }
         else if(g.searchTimer>10){
