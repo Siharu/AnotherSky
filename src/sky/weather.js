@@ -920,12 +920,39 @@ export function setRainDensity(density){
    of weather. Pulses on its own breathing rhythm rather than a constant
    fade, so it reads as breath rather than a static fogged patch of air. */
 function breathFogSprite(){
-  const size=64, c=makeCanvas(size), ctx=c.getContext('2d');
-  const g=ctx.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
-  g.addColorStop(0,'rgba(230,230,238,0.9)');
-  g.addColorStop(0.5,'rgba(220,220,230,0.35)');
-  g.addColorStop(1,'rgba(220,220,230,0)');
-  ctx.fillStyle=g; ctx.fillRect(0,0,size,size);
+  const size=128, c=makeCanvas(size), ctx=c.getContext('2d');
+  const cx=size/2, cy=size/2;
+  // Several overlapping soft blobs, each offset/sized/rotated slightly
+  // differently, instead of one clean radial gradient - a single uniform
+  // circle growing/shrinking on the breathing cycle reads as a light
+  // blinking, not smoke dispersing. Layering uneven, ragged puffs gives
+  // it real internal density variation and an irregular silhouette.
+  ctx.globalCompositeOperation = 'lighter';
+  const blobs = 6;
+  for(let i=0;i<blobs;i++){
+    const ang = (i/blobs)*Math.PI*2 + Math.random()*0.6;
+    const dist = (i===0?0:size*0.14) * Math.random();
+    const bx = cx + Math.cos(ang)*dist, by = cy + Math.sin(ang)*dist*0.7;
+    const r = size*(0.22 + Math.random()*0.16);
+    const g = ctx.createRadialGradient(bx,by,0,bx,by,r);
+    const a = 0.28 + Math.random()*0.22;
+    g.addColorStop(0, `rgba(225,226,232,${a})`);
+    g.addColorStop(0.55, `rgba(215,217,226,${a*0.4})`);
+    g.addColorStop(1, 'rgba(215,217,226,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(bx, by, r, r*(0.75+Math.random()*0.3), Math.random()*Math.PI, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  // ragged edge cutouts so the silhouette itself isn't a clean disc
+  ctx.globalCompositeOperation = 'destination-out';
+  for(let i=0;i<10;i++){
+    const ang = Math.random()*Math.PI*2, dist = size*(0.28+Math.random()*0.22);
+    const x = cx+Math.cos(ang)*dist, y = cy+Math.sin(ang)*dist*0.7;
+    const r = size*(0.05+Math.random()*0.08);
+    ctx.fillStyle = `rgba(0,0,0,${0.3+Math.random()*0.4})`;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
   return new THREE.CanvasTexture(c);
 }
 const breathMat = new THREE.SpriteMaterial({ map:breathFogSprite(), transparent:true, depthWrite:false, opacity:0 });
@@ -943,10 +970,16 @@ function updateBreathFog(dt){
   }
   const cycle = (Math.sin(breathFogPhase*Math.PI*2)*0.5+0.5); // 0..1, exhale peak
   const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
-  breathSprite.position.copy(camera.position).addScaledVector(fwd, 0.55);
+  // was 0.55 units out with up to 0.8 scale - at that distance a sprite
+  // that size fills a huge chunk of the view (roughly 50+ degrees),
+  // reading as a giant pulsing flash glued to the camera rather than a
+  // small puff of breath. Pushed further out and shrunk so its angular
+  // size on screen actually reads as "small, near the mouth."
+  breathSprite.position.copy(camera.position).addScaledVector(fwd, 1.3);
   breathSprite.position.y -= 0.08; // sits near mouth height, not dead center of the view
-  if(raining) breathMat.opacity = 0.55 * (0.3 + cycle*0.7);
-  const growth = 0.45 + cycle*0.35;
+  breathSprite.material.rotation = breathFogPhase*0.35; // slow drift so the wispy texture isn't static
+  if(raining) breathMat.opacity = 0.4 * (0.3 + cycle*0.7);
+  const growth = 0.14 + cycle*0.1;
   breathSprite.scale.set(growth, growth, 1);
 }
 
