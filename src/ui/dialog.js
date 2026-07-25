@@ -52,6 +52,10 @@ function ensureBuilt(){
   dialogEl.id = 'game-dialog-overlay';
   dialogEl.innerHTML = `
     <div class="game-dialog-panel notched">
+      <span class="gd-corner gd-tl"></span>
+      <span class="gd-corner gd-tr"></span>
+      <span class="gd-corner gd-bl"></span>
+      <span class="gd-corner gd-br"></span>
       <div class="game-dialog-title"></div>
       <div class="game-dialog-body"></div>
       <div class="game-dialog-actions">
@@ -113,6 +117,26 @@ function ensureBuilt(){
       animation: dialog-static-flicker 1.1s steps(2) infinite;
     }
     .game-dialog-panel > *{ position:relative; z-index:4; }
+    /* corner brackets - small L-shaped marks at each corner, each with its
+       own chromatic RGB-split jolt on a desynced timer (different
+       animation-delay per corner) so the glitch reads as flickering
+       around the frame rather than the whole panel jerking as one block. */
+    .gd-corner{
+      position:absolute; width:22px; height:22px; z-index:5; pointer-events:none;
+      border-color:rgba(122,31,31,0.85); border-style:solid; border-width:0;
+    }
+    .gd-tl{ top:-1px; left:-1px; border-top-width:2px; border-left-width:2px; animation: gd-corner-glitch 3.4s steps(1) infinite; }
+    .gd-tr{ top:-1px; right:-1px; border-top-width:2px; border-right-width:2px; animation: gd-corner-glitch 3.4s steps(1) infinite 0.85s; }
+    .gd-bl{ bottom:-1px; left:-1px; border-bottom-width:2px; border-left-width:2px; animation: gd-corner-glitch 3.4s steps(1) infinite 1.7s; }
+    .gd-br{ bottom:-1px; right:-1px; border-bottom-width:2px; border-right-width:2px; animation: gd-corner-glitch 3.4s steps(1) infinite 2.55s; }
+    @keyframes gd-corner-glitch{
+      0%, 90%, 100%{ filter:none; transform:translate(0,0); border-color:rgba(122,31,31,0.85); }
+      90.3%{ filter:drop-shadow(-2px 0 rgba(255,40,60,0.85)) drop-shadow(2px 0 rgba(40,220,255,0.7)); transform:translate(-1.5px,-1px); border-color:rgba(201,194,182,0.9); }
+      90.7%{ filter:drop-shadow(2px 0 rgba(255,40,60,0.85)) drop-shadow(-2px 0 rgba(40,220,255,0.7)); transform:translate(1.5px,1px); }
+      91.1%{ filter:none; transform:translate(0,0); border-color:rgba(122,31,31,0.85); }
+      95%{ filter:drop-shadow(-2px 0 rgba(255,40,60,0.75)) drop-shadow(2px 0 rgba(40,220,255,0.6)); transform:translate(-1px,0); }
+      95.4%{ filter:none; transform:translate(0,0); }
+    }
     @keyframes dialog-scanline-roll{
       0%{ background-position-y:0; }
       100%{ background-position-y:60px; }
