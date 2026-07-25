@@ -37,6 +37,9 @@ import { state } from '../core/state.js';
 import { makeCanvas } from '../render/postprocessing.js';
 import { SAFEHOUSE_CENTER } from './safehouse.js';
 import { getCorruptionEdgeRadius } from '../systems/zones.js';
+import {
+  downtownStreetRibbons, EXIT_ROAD_ANGLE, EXIT_ROAD_HALFWIDTH, EXIT_ROAD_START, EXIT_ROAD_END
+} from './worldData.js';
 
 const BLADE_COUNT = 36000;
 const PATCH_SIZE = 30;       // world units square, re-centers on the player
@@ -213,6 +216,7 @@ uniform float uHeightNoiseFreq;
 uniform float uHeightNoiseAmp;
 uniform float uRandomHeightAmount;
 uniform float uInsideSafehouse; // 0/1 - see updateGrass()'s comment for why this exists
+uniform float uOnPavement; // 0/1 - see updateGrass()'s isOnPavement() comment
 uniform vec2 uCorruptionOrigin;
 uniform float uCorruptionEdge; // growing radius - see systems/zones.js's getCorruptionLevel() for the matching JS-side formula this mirrors
 uniform sampler2D uNoiseTex;
@@ -293,6 +297,7 @@ void main(){
   // same practical effect as toggling visibility, just per-blade since
   // this mesh (unlike rain's own Points object) has no single flag to flip.
   if(uInsideSafehouse > 0.5) bladeHeight = 0.0;
+  if(uOnPavement > 0.5) bladeHeight = 0.0;
 
   float isTop = color.g;                                    // 1 at the tip, 0 at either base vertex
   float side  = (color.r > 0.05) ? 1.0 : (color.b > 0.05) ? -1.0 : 0.0; // which base corner
@@ -385,6 +390,7 @@ function buildMaterial(){
       uHeightNoiseAmp: { value: 1.0 },
       uRandomHeightAmount: { value: 0.35 },
       uInsideSafehouse: { value: 0 },
+      uOnPavement: { value: 0 },
       uCorruptionOrigin: { value: new THREE.Vector2(SAFEHOUSE_CENTER.x, SAFEHOUSE_CENTER.z) },
       uCorruptionEdge: { value: 0 },
       uNoiseTex: { value: buildNoiseTexture() },
@@ -407,10 +413,42 @@ export function initGrass(){
   return mesh;
 }
 
+// Grass had zero awareness of paved surfaces - the only exclusion it
+// ever had was the one hand-placed safehouse interior (uInsideSafehouse
+// above). Every downtown street is already captured as a polar ribbon
+// {ang, r0, r1, hw} in worldData.js's downtownStreetRibbons the moment
+// generateDistrict() builds it (main.js), and the exit road has its own
+// matching constants - neither was ever actually read by anything until
+// now, so grass rendered straight through every paved street in the game.
+// Cheap polar check: same coarseness tradeoff as uInsideSafehouse itself
+// (a single global boolean for wherever the player currently stands, not
+// a true per-blade world-position mask) - consistent with the existing
+// precedent rather than a heavier per-blade solution.
+function isOnPavement(px, pz){
+  const playerAng = Math.atan2(pz, px), playerR = Math.hypot(px, pz);
+  for(const r of downtownStreetRibbons){
+    let da = Math.abs(playerAng - r.ang) % (Math.PI*2);
+    if(da > Math.PI) da = Math.PI*2 - da;
+    // hw is a straight-line half-width, but da is an angular difference -
+    // approximate the perpendicular distance as playerR*da (arc length),
+    // fine at these radii/widths for a cheap per-frame check.
+    if(playerR >= r.r0 && playerR <= r.r1 && playerR*da < r.hw) return true;
+  }
+  // exit road: same perpendicular-distance idea, but it's a straight
+  // ribbon along a fixed direction rather than radial, so project onto
+  // its own dir/perp axes instead of polar angle.
+  const dirX = Math.cos(EXIT_ROAD_ANGLE), dirZ = Math.sin(EXIT_ROAD_ANGLE);
+  const perpX = -dirZ, perpZ = dirX;
+  const along = px*dirX + pz*dirZ, across = px*perpX + pz*perpZ;
+  if(along >= EXIT_ROAD_START && along <= EXIT_ROAD_END && Math.abs(across) < EXIT_ROAD_HALFWIDTH) return true;
+  return false;
+}
+
 export function updateGrass(dt){
   if(!material) return;
   material.uniforms.uTime.value += dt;
   material.uniforms.uPlayerPos.value.set(state.playerX, 0, state.playerZ);
   material.uniforms.uInsideSafehouse.value = state.insideSafehouse ? 1 : 0;
+  material.uniforms.uOnPavement.value = isOnPavement(state.playerX, state.playerZ) ? 1 : 0;
   material.uniforms.uCorruptionEdge.value = getCorruptionEdgeRadius();
 }
