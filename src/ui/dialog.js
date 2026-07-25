@@ -35,9 +35,57 @@ function ensureBuilt(){
     }
     #game-dialog-overlay.open{ display:flex; }
     .game-dialog-panel{
+      position:relative; overflow:hidden;
       width:min(420px, 100%); background:rgba(6,4,5,0.96);
       border:1px solid rgba(122,31,31,0.55); padding:22px 22px 18px;
       box-shadow:0 0 0 1px rgba(0,0,0,0.6), 0 10px 40px rgba(0,0,0,0.6);
+      animation: dialog-glitch-shift 2.6s steps(1) infinite;
+    }
+    /* scanlines - repeating horizontal bands, slow vertical roll so they
+       read as a live CRT raster rather than a static printed texture */
+    .game-dialog-panel::before{
+      content:''; position:absolute; inset:0; z-index:2; pointer-events:none;
+      background:repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,0.05) 0px,
+        rgba(255,255,255,0.05) 1px,
+        rgba(0,0,0,0.12) 2px,
+        rgba(0,0,0,0.12) 3px
+      );
+      background-size:100% 3px;
+      mix-blend-mode:overlay;
+      animation: dialog-scanline-roll 5s linear infinite;
+    }
+    /* static noise - tiled SVG turbulence, opacity/position jump on a
+       stepped timer so it flickers between "frames" of noise instead of
+       smoothly drifting like a texture pan */
+    .game-dialog-panel::after{
+      content:''; position:absolute; inset:-20%; z-index:3; pointer-events:none;
+      background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      opacity:0.05; mix-blend-mode:screen;
+      animation: dialog-static-flicker 0.4s steps(2) infinite;
+    }
+    .game-dialog-panel > *{ position:relative; z-index:4; }
+    @keyframes dialog-scanline-roll{
+      0%{ background-position-y:0; }
+      100%{ background-position-y:60px; }
+    }
+    @keyframes dialog-static-flicker{
+      0%{ opacity:0.03; transform:translate(0,0); }
+      50%{ opacity:0.09; transform:translate(-1%,1%); }
+      100%{ opacity:0.04; transform:translate(1%,-1%); }
+    }
+    /* chromatic-aberration glitch - RGB channel split via layered
+       drop-shadows, held mostly at rest (no filter) with brief, rare,
+       jarring jolts - same "wrong-but-still, rare flash" language as the
+       safehouse's locked-door glitch treatment, not a constant wobble */
+    @keyframes dialog-glitch-shift{
+      0%, 92%, 100%{ filter:none; transform:translate(0,0); }
+      92.5%{ filter:drop-shadow(-2px 0 rgba(255,40,60,0.55)) drop-shadow(2px 0 rgba(40,220,255,0.45)); transform:translate(-2px,0); }
+      93%{ filter:drop-shadow(2px 0 rgba(255,40,60,0.55)) drop-shadow(-2px 0 rgba(40,220,255,0.45)); transform:translate(2px,0); }
+      93.5%{ filter:none; transform:translate(0,0); }
+      96%{ filter:drop-shadow(-3px 0 rgba(255,40,60,0.6)) drop-shadow(3px 0 rgba(40,220,255,0.5)); transform:translate(1px,-1px); }
+      96.4%{ filter:none; transform:translate(0,0); }
     }
     .game-dialog-title{
       font-family:var(--font-mono); font-size:.62rem; letter-spacing:.24em;
