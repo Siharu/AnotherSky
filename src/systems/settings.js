@@ -30,6 +30,7 @@ import { hubOverlay } from '../ui/menu.js';
 import { setGrassQuality } from '../world/grass.js';
 import { setRainDensity } from '../sky/weather.js';
 import { gameConfirm, gameAlert } from '../ui/dialog.js';
+import { setColorGradeEnabled } from '../render/colorGrade.js';
 
 const $ = id => document.getElementById(id);
 
@@ -51,6 +52,13 @@ export let settingsVibration = true;
 // moonLight). Defaults on since it's the whole point of adding it, but
 // low-end devices/phones need an easy way back out.
 export let settingsShadows = true;
+// "Cinematic Filter" - the full-screen color-grade shader pass in
+// render/colorGrade.js (contrast/highlight/shadow/black curve, selective
+// hue saturation, clarity, vignette). Same on/off shape as
+// settingsShadows above: the pass object itself always exists once
+// built, this flag just picks which render path renderWithColorGrade()
+// takes each frame.
+export let settingsCinematicFilter = true;
 // Music/SFX volume: the current WebAudio graph (see systems/audio.js) is
 // still a single bus - every source connects straight to masterGain, with
 // no separate music/sfx sub-gain to split off. These two sliders are real,
@@ -83,6 +91,10 @@ export function applyShadows(){
   // moonLight stay in place either way, they just go unused while this
   // is false. Nothing to re-traverse or toggle per-object.
   renderer.shadowMap.enabled = settingsShadows;
+}
+
+export function applyCinematicFilter(){
+  setColorGradeEnabled(settingsCinematicFilter);
 }
 
 // #whisper/#interact-prompt text has no background box by default (see
@@ -126,6 +138,7 @@ function applyParticleDensity(){
       if(typeof s.invertY === 'boolean') settingsInvertY = s.invertY;
       if(typeof s.vibration === 'boolean') settingsVibration = s.vibration;
       if(typeof s.shadows === 'boolean') settingsShadows = s.shadows;
+      if(typeof s.cinematicFilter === 'boolean') settingsCinematicFilter = s.cinematicFilter;
       if(typeof s.muted === 'boolean') state.muted = s.muted;
       if(typeof s.autosave === 'boolean') state.autosaveEnabled = s.autosave;
       if(typeof s.dialogueOpacity === 'number') settingsDialogueOpacity = s.dialogueOpacity;
@@ -135,6 +148,7 @@ function applyParticleDensity(){
   }catch(e){}
   applyResolution();
   applyShadows();
+  applyCinematicFilter();
   applyDialogueOpacity();
   applyParticleDensity();
 })();
@@ -144,6 +158,7 @@ export function saveSettings(){
     sens:settingsSensMult, vol:userVolume, music:settingsMusicVolume, sfx:settingsSfxVolume,
     bright:settingsBrightness, res:settingsResScale,
     invertY:settingsInvertY, vibration:settingsVibration, shadows:settingsShadows, muted:state.muted,
+    cinematicFilter:settingsCinematicFilter,
     autosave:state.autosaveEnabled, dialogueOpacity:settingsDialogueOpacity,
     reduceFlash:settingsReduceFlash, particleDensity:settingsParticleDensity
   })); }catch(e){}
@@ -276,12 +291,14 @@ const settingsMute = $('settings-mute');
 const settingsInvertYEl = $('settings-invert-y');
 const settingsVibrationEl = $('settings-vibration');
 const settingsShadowsEl = $('settings-shadows');
+const settingsCinematicFilterEl = $('settings-cinematic-filter');
 const settingsAutosaveEl = $('settings-autosave');
 const settingsReduceFlashEl = $('settings-reduce-flash');
 settingsMute.checked = state.muted;
 settingsInvertYEl.checked = settingsInvertY;
 settingsVibrationEl.checked = settingsVibration;
 settingsShadowsEl.checked = settingsShadows;
+settingsCinematicFilterEl.checked = settingsCinematicFilter;
 settingsAutosaveEl.checked = state.autosaveEnabled;
 settingsReduceFlashEl.checked = settingsReduceFlash;
 settingsMute.addEventListener('change', ()=>{
@@ -301,6 +318,11 @@ settingsVibrationEl.addEventListener('change', ()=>{
 settingsShadowsEl.addEventListener('change', ()=>{
   settingsShadows = settingsShadowsEl.checked;
   applyShadows();
+  saveSettings();
+});
+settingsCinematicFilterEl.addEventListener('change', ()=>{
+  settingsCinematicFilter = settingsCinematicFilterEl.checked;
+  applyCinematicFilter();
   saveSettings();
 });
 settingsAutosaveEl.addEventListener('change', ()=>{
