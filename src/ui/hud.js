@@ -113,15 +113,42 @@ export const radioTicker = document.getElementById('radio-ticker');
    wants it) are dropped rather than kept as a growing on-screen
    history, to match the reference's plain current/next read. Once
    every objective is complete, the last one stays shown as current
-   rather than the panel going dark. */
+   rather than the panel going dark.
+
+   Tap/click-to-expand: the current objective row is the only clickable
+   part of the panel (the rest stays pointer-events:none in CSS, so it
+   never eats clicks meant for the game world behind it). Expanding
+   doesn't open a detail/wiki panel - it reveals current.thought, the
+   character's own first-person read on that objective (systems/
+   quests.js), styled as an interior aside rather than a UI disclosure.
+   Kept as a persisted `expanded` flag (not per-render local state) so
+   it survives the signature-gated re-renders above; reset to collapsed
+   whenever the underlying current objective actually changes, since an
+   expanded thought about objective A shouldn't stay open once B is
+   current. */
 const objectivePanelEl = document.getElementById('objective-panel');
 let lastObjectiveSig = null;
+let expanded = false;
+let currentQuest = null; // cached so the click handler can re-render without recomputing getActiveQuests()
+
+function renderObjectivePanel(current, next){
+  objectivePanelEl.innerHTML = `
+    <div class="obj-section-label">OBJECTIVE</div>
+    <div class="obj-row current" id="obj-current-row">${current.name}</div>
+    <div class="obj-thought${expanded ? ' expanded' : ''}">${current.thought}</div>
+    ${next ? `<div class="obj-row next">${next.name}</div>` : ''}
+  `;
+  objectivePanelEl.classList.add('visible');
+}
+
 export function updateObjectivePanel(){
   if(!objectivePanelEl) return;
   const quests = getActiveQuests(state);
   if(!quests.length){
     if(lastObjectiveSig !== ''){
       lastObjectiveSig = '';
+      currentQuest = null;
+      expanded = false;
       objectivePanelEl.innerHTML = '';
       objectivePanelEl.classList.remove('visible');
     }
@@ -134,13 +161,26 @@ export function updateObjectivePanel(){
   const activeIdx = currentIdx===-1 ? quests.length-1 : currentIdx;
   const current = quests[activeIdx];
   const next = quests[activeIdx+1];
-  objectivePanelEl.innerHTML = `
-    <div class="obj-section-label">OBJECTIVE</div>
-    <div class="obj-row current">${current.name}</div>
-    ${next ? `<div class="obj-row next">${next.name}</div>` : ''}
-  `;
-  objectivePanelEl.classList.add('visible');
+  // a genuinely different current objective than last render - collapse
+  // rather than carry an expanded thought over to whatever's now current
+  if(!currentQuest || currentQuest.id !== current.id) expanded = false;
+  currentQuest = current;
+  renderObjectivePanel(current, next);
 }
+
+// Attached once to the panel itself (not the row, which gets replaced
+// every render) and delegated via closest() - toggles the thought open/
+// closed and re-renders from the cached currentQuest rather than
+// waiting for the next real state change to trigger a render.
+objectivePanelEl?.addEventListener('click', (e) => {
+  if(!currentQuest) return;
+  if(!e.target.closest('#obj-current-row')) return;
+  expanded = !expanded;
+  const quests = getActiveQuests(state);
+  const currentIdx = quests.findIndex(q => !q.have);
+  const activeIdx = currentIdx===-1 ? quests.length-1 : currentIdx;
+  renderObjectivePanel(quests[activeIdx], quests[activeIdx+1]);
+});
 
 /* ---------- SYSTEM CLOCK ----------
    Real-world wall clock (not game time - state.elapsed is a separate
