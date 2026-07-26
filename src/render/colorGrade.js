@@ -179,6 +179,27 @@ const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), gradeMaterial);
 quad.frustumCulled = false;
 quadScene.add(quad);
 
+// Defensive: if this shader ever fails to compile/link (typo, driver
+// quirk, whatever), silently falling back to the plain render is far
+// better than the whole game going black with zero on-screen signal.
+// One-time warm-up render + program status check, done off the main
+// render path so it can't itself throw into the game loop.
+let gradeCompileFailed = false;
+try{
+  renderer.compile(quadScene, quadCamera);
+  const program = renderer.properties.get(gradeMaterial).program;
+  if(program && program.program){
+    const gl = renderer.getContext();
+    if(!gl.getProgramParameter(program.program, gl.LINK_STATUS)){
+      console.error('[colorGrade] shader program failed to link:', gl.getProgramInfoLog(program.program));
+      gradeCompileFailed = true;
+    }
+  }
+}catch(err){
+  console.error('[colorGrade] shader compile check failed:', err);
+  gradeCompileFailed = true;
+}
+
 function setColorGradeEnabled(value){
   enabled = !!value;
 }
@@ -198,17 +219,27 @@ function resizeColorGrade(){
 resizeColorGrade();
 
 function renderWithColorGrade(){
-  if(!enabled){
+  if(!enabled || gradeCompileFailed){
     renderer.render(scene, camera);
     return;
   }
-  const prevTarget = renderer.getRenderTarget();
-  renderer.setRenderTarget(rt);
-  renderer.render(scene, camera);
-  renderer.setRenderTarget(prevTarget);
+  try{
+    const prevTarget = renderer.getRenderTarget();
+    renderer.setRenderTarget(rt);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(prevTarget);
 
-  gradeMaterial.uniforms.tDiffuse.value = rt.texture;
-  renderer.render(quadScene, quadCamera);
+    gradeMaterial.uniforms.tDiffuse.value = rt.texture;
+    renderer.render(quadScene, quadCamera);
+  }catch(err){
+    // Never let a grading-pass failure blank the game - log it once
+    // and permanently fall back to the plain render for the rest of
+    // the session rather than retrying (and re-throwing) every frame.
+    console.error('[colorGrade] render pass threw, disabling grade pass for this session:', err);
+    gradeCompileFailed = true;
+    renderer.setRenderTarget(null);
+    renderer.render(scene, camera);
+  }
 }
 
 export { renderWithColorGrade, resizeColorGrade, setColorGradeEnabled };
