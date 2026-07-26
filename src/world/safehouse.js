@@ -459,9 +459,9 @@ function buildSafehouse(){
       lockedDoorPivot.add(nail);
     }
   }
-  const lockedLintel = new THREE.Mesh(new THREE.BoxGeometry(lockedDoorW+0.14, SAFEHOUSE_WALL_H-lockedDoorH+0.06, 0.1), braceMat);
-  lockedLintel.position.set(COL_W, SAFEHOUSE_WALL_H - (SAFEHOUSE_WALL_H-lockedDoorH)/2 + 0.02, WAKE_DOOR_Z);
-  group.add(lockedLintel);
+  const lockedBoardLintel = new THREE.Mesh(new THREE.BoxGeometry(lockedDoorW+0.14, SAFEHOUSE_WALL_H-lockedDoorH+0.06, 0.1), braceMat);
+  lockedBoardLintel.position.set(COL_W, SAFEHOUSE_WALL_H - (SAFEHOUSE_WALL_H-lockedDoorH)/2 + 0.02, WAKE_DOOR_Z);
+  group.add(lockedBoardLintel);
   obstacles.push({ x: cx+COL_W, z: cz+WAKE_DOOR_Z, type:'rect', hw: lockedDoorW/2, hd: 0.1, radius: lockedDoorW/2 });
 
   // ---- open interior swing doors: TV room, storage room, radio room ----
