@@ -119,6 +119,93 @@ function safehouseMat(color, emissive, map){
   return m;
 }
 
+// pivot: THREE.Group already positioned so its ORIGIN sits at the hinge
+//   edge (three.js convention used by this file already for the main
+//   exit door - pivot.position is the hinge line, and the leaf itself
+//   is offset away from it, not centered on it, so rotating pivot.
+//   rotation.y swings around a real hinge instead of the door's middle).
+// leafDir: +1 or -1, which way the leaf extends away from that hinge
+//   edge along the pivot's local X axis.
+// parentGroup: the static building group the pivot was added to -
+//   hinge barrels are visual-only and mount here, not on the pivot,
+//   same as real hinges stay on the frame rather than the door itself.
+function buildDetailedDoor({ pivot, parentGroup, doorW, doorH, baseColor, leafDir = 1 }){
+  const doorMatL = safehouseMat(baseColor);
+  const panelMat = safehouseMat(new THREE.Color(baseColor).offsetHSL(0, 0, 0.06).getHex());
+  const barMat = safehouseMat(new THREE.Color(baseColor).offsetHSL(0, 0, -0.08).getHex());
+  const backPanelMat = safehouseMat(new THREE.Color(baseColor).offsetHSL(0, 0, -0.04).getHex());
+  const backTrimMat = safehouseMat(new THREE.Color(baseColor).offsetHSL(0, 0, -0.14).getHex());
+  const knobMat = safehouseMat(0xbdb7ab, 0x2a2824);
+
+  const centerX = leafDir * doorW/2; // leaf's own center, offset away from the hinge at x=0
+
+  // main slab
+  const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 0.08), doorMatL);
+  doorMesh.position.set(centerX, 0, 0);
+  pivot.add(doorMesh);
+
+  // three raised front panels (top/mid/bottom) + two vertical stiles,
+  // same layout family as a standard 6-panel door, scaled to doorW/doorH
+  const pw = doorW*0.78, ph1 = doorH*0.26, ph2 = doorH*0.23;
+  const panelYs = [doorH*0.32, 0, -doorH*0.32];
+  const panelHs = [ph1, ph2, ph1];
+  for(let i=0;i<3;i++){
+    const p = new THREE.Mesh(new THREE.BoxGeometry(pw, panelHs[i], 0.03), panelMat);
+    p.position.set(centerX, panelYs[i], 0.056);
+    pivot.add(p);
+  }
+  const stileW = doorW*0.09;
+  for(const sx of [-1,1]){
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(stileW, doorH*0.9, 0.025), barMat);
+    bar.position.set(centerX + sx*doorW*0.36, 0, 0.062);
+    pivot.add(bar);
+  }
+
+  // back-face detail so the reverse side doesn't read as a bare slab
+  // once the door is open and the player sees the inside
+  for(let i=0;i<3;i++){
+    const p = new THREE.Mesh(new THREE.BoxGeometry(pw*0.96, panelHs[i]*0.95, 0.02), backPanelMat);
+    p.position.set(centerX, panelYs[i], -0.056);
+    pivot.add(p);
+  }
+  const backStile = new THREE.Mesh(new THREE.BoxGeometry(doorW*0.05, doorH*0.86, 0.012), backTrimMat);
+  backStile.position.set(centerX, 0, -0.066);
+  pivot.add(backStile);
+
+  // knob - mounted near the edge opposite the hinge (far end of the leaf)
+  const knobX = leafDir * (doorW - doorW*0.12);
+  const knobY = -(doorH*0.5 - doorH*0.32); // roughly waist height regardless of door scale
+  const knobGroup = new THREE.Group();
+  knobGroup.position.set(knobX, knobY, 0.07);
+  pivot.add(knobGroup);
+  const backplate = new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.055,0.02,16), knobMat);
+  backplate.rotation.x = Math.PI/2;
+  knobGroup.add(backplate);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.06,12,12), knobMat);
+  knob.position.set(0.08*leafDir, 0, 0.02);
+  knobGroup.add(knob);
+  const latch = new THREE.Mesh(new THREE.BoxGeometry(0.08,0.02,0.02), knobMat);
+  latch.position.set(-0.015*leafDir, 0, 0.02);
+  knobGroup.add(latch);
+
+  // hinge barrels, static on the frame side at the pivot's own hinge
+  // line (local x=0) - three spaced along the door's height
+  const hingeMat = safehouseMat(0xaea597, 0x2a2824);
+  for(const t of [0.22, 0.5, 0.78]){
+    const hy = doorH*(0.5-t);
+    const g = new THREE.Group();
+    g.position.set(pivot.position.x, pivot.position.y + hy, pivot.position.z);
+    g.rotation.y = pivot.rotation.y;
+    parentGroup.add(g);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.05, doorH*0.09, 0.1), hingeMat);
+    g.add(plate);
+    const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018, doorH*0.11, 10), hingeMat);
+    pin.rotation.x = Math.PI/2;
+    g.add(pin);
+  }
+  return doorMesh;
+}
+
 function makeCarpetTexture(){
   const size = 128;
   const cvs = document.createElement('canvas');
