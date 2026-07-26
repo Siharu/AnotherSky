@@ -62,9 +62,10 @@ const gradeMaterial = new THREE.ShaderMaterial({
     tDiffuse: { value: null },
     uResolution: { value: new THREE.Vector2(1, 1) },
     uContrast: { value: 1.28 },      // +28 on the 0..100 slider scale
-    uHighlights: { value: 0.85 },    // -15
-    uShadows: { value: 0.80 },       // -20 (darkens backgrounds)
-    uBlackPoint: { value: 0.10 },    // -10, but crushing toward black so expressed as a positive lift-removed amount
+    uHighlights: { value: 0.90 },    // -15, softened - see uPivot note below
+    uShadows: { value: 0.92 },       // -20, softened - same reason
+    uBlackPoint: { value: 0.03 },    // -10, softened - see uPivot note below
+    uPivot: { value: 0.16 },         // contrast/shadow-highlight pivot point
     uSaturation: { value: 1.0 },     // global saturation left neutral - the color-mixer split below does the real work
     uWarmBoost: { value: 1.15 },     // +15 saturation on red/orange/yellow
     uWarmHueShift: { value: 0.03 },  // slight hue nudge toward orange for the warm channel
@@ -86,6 +87,7 @@ const gradeMaterial = new THREE.ShaderMaterial({
     uniform float uHighlights;
     uniform float uShadows;
     uniform float uBlackPoint;
+    uniform float uPivot;
     uniform float uSaturation;
     uniform float uWarmBoost;
     uniform float uWarmHueShift;
@@ -97,14 +99,25 @@ const gradeMaterial = new THREE.ShaderMaterial({
     vec3 gradeCurve(vec3 c){
       // black point: crush near-zero values instead of just
       // multiplying, so the game's already-heavy fog/dark scenes
-      // don't wash out to grey.
+      // don't wash out to grey. Softened from the original -10
+      // spec (uBlackPoint 0.03, not 0.10) - a photo-grade black
+      // crush assumes normal exposure; this game's baseline
+      // luminance already sits well below a typical photo's, so
+      // the full -10 crush was clipping most on-screen pixels to
+      // literal 0 (reported as "everything is black").
       c = max(c - uBlackPoint, 0.0) / max(1.0 - uBlackPoint, 0.0001);
-      // shadows/highlights split around mid-grey, contrast pivots
-      // on the same point so exposure doesn't drift.
+      // Contrast/shadows/highlights all pivot on uPivot rather
+      // than photo-normal mid-grey (0.5) - this scene's average
+      // luminance runs close to uPivot (~0.16), not 0.5, so a
+      // 0.5-pivoted contrast stretch was pushing nearly every
+      // pixel below the pivot into negative territory, i.e.
+      // clamped to black. Pivoting at the scene's actual dark
+      // baseline keeps the contrast boost visible without wiping
+      // out everything darker than a normally-exposed photo.
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      vec3 shadowLift = c * mix(uShadows, 1.0, smoothstep(0.0, 0.5, lum));
-      vec3 highlightRolloff = mix(shadowLift, shadowLift * uHighlights, smoothstep(0.5, 1.0, lum));
-      return (highlightRolloff - 0.5) * uContrast + 0.5;
+      vec3 shadowLift = c * mix(uShadows, 1.0, smoothstep(0.0, uPivot, lum));
+      vec3 highlightRolloff = mix(shadowLift, shadowLift * uHighlights, smoothstep(uPivot, 1.0, lum));
+      return (highlightRolloff - uPivot) * uContrast + uPivot;
     }
 
     // ---- HSV helpers for the color-mixer split below ----
