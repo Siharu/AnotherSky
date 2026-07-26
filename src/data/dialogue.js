@@ -249,6 +249,12 @@ export const relayConnectLines = [
 ];
 export const relayConnectFinalLine = "...that's all of them. eight dead relays, one live one, and now something's finally lit up out past all of it. i can see it from here. i couldn't see it from here before.";
 
+// ---------- HOLOGRAPHIC MAP ----------
+// Fires once, from main.js's connectDeadRelay(), the moment the fifth
+// dead relay comes back online - HOLOMAP_UNLOCK_COUNT there is the
+// actual gate, this line just narrates it.
+export const holoMapUnlockLine = "...something just came through on all five at once. not words - a shape. the radio's throwing a picture now. i can see the district.";
+
 // ---------- HQ TOWER ----------
 // The giant tenth mast (main.js's HQ_TOWER_POS) - always visible at a
 // distance, deliberately unreachable (a soft collision wall) until
