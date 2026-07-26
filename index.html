@@ -1368,9 +1368,28 @@
     font-size:.66rem; letter-spacing:.03em; line-height:1.6; color:var(--bone);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
-  .obj-row.current{ opacity:1; color:var(--rust-light); }
+  .obj-row.current{
+    opacity:1; color:var(--rust-light);
+    pointer-events:auto; cursor:pointer; /* only clickable part of the panel - rest stays click-through */
+  }
   .obj-row.current::before{ content:'- '; }
   .obj-row.next{ opacity:.4; padding-left:1.1em; }
+
+  /* the character's own first-person read on the current objective
+     (systems/quests.js's thought(state)) - a tap/click reveal, not a
+     detail panel, so it's styled as an interior aside: italic, quote-
+     marked, dimmer than the objective line it belongs to, softly
+     fading/sliding in rather than snapping open. Collapsed by default
+     (max-height:0 + hidden overflow) so it takes no vertical space
+     until expanded. */
+  .obj-thought{
+    font-style:italic; font-size:.62rem; letter-spacing:.02em; line-height:1.55;
+    color:var(--bone); opacity:0; max-height:0; overflow:hidden; padding-left:1.1em;
+    transition:opacity .5s ease, max-height .5s ease, padding-top .5s ease;
+  }
+  .obj-thought::before{ content:'"'; opacity:.5; }
+  .obj-thought::after{ content:'"'; opacity:.5; }
+  .obj-thought.expanded{ opacity:.62; max-height:3.2em; padding-top:2px; }
 
   #frag-counter{
     font-size:.68rem; letter-spacing:.22em; opacity:.7; background:rgba(0,0,0,0.4);
