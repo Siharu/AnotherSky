@@ -1937,7 +1937,7 @@ function updateHQTowerBarrier(dt){
     }
   }
 }
-
+function updateRadioTowerBeacon(){
   if(!radioTowerBeaconMesh) return;
   const pulse = 0.55 + Math.sin(performance.now()*0.0022)*0.45;
   radioTowerBeaconMesh.material.opacity = 0.5 + pulse*0.5;
