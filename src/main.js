@@ -14,6 +14,7 @@ import {
   updateRain, updateDust, updateAsh, getNearbySquallCount, updateGroundWetness,
 } from './sky/weather.js';
 import { makeCanvas, patchFogToDistance } from './render/postprocessing.js';
+import { renderWithColorGrade, resizeColorGrade } from './render/colorGrade.js';
 import { terrainHeight, groundHeightAt } from './world/terrain.js';
 import { initGrass, updateGrass } from './world/grass.js';
 import { groundTexture, toonGradientMap, toonRamp } from './world/materials.js';
@@ -128,6 +129,20 @@ import {
   SAFEHOUSE_CENTER, SAFEHOUSE_HALF_W, SAFEHOUSE_HALF_D,
 } from './world/safehouse.js';
 import { updateDoorTransitions } from './systems/doors.js';
+
+// state.playerX/playerZ's default (-60,45) doubles as SAFEHOUSE_CENTER
+// (safehouse.js snapshots it at import time, before this line runs, so
+// changing it here only moves the player - not the building). That
+// default point is the hallway crossroads where all four room-grid
+// walls converge, not inside any room. The old six-room layout apparently
+// tolerated spawning there; the new NW/NE/SW/SE grid does not - the
+// player spawns clipped into/against the locked door's wall geometry
+// (COL_W, WAKE_DOOR_Z), which is what "spawns inside the locked door"
+// looks like. Moved into open floor in the actual wake-up room (NW
+// quadrant: x < COL_W, z > ROW_DIV), clear of both the bed (far NW
+// corner) and the door.
+state.playerX = SAFEHOUSE_CENTER.x - (SAFEHOUSE_HALF_W - 4.0);
+state.playerZ = SAFEHOUSE_CENTER.z + (SAFEHOUSE_HALF_D * 0.5);
 
 /* ============================================================
    ANOTHER SKY — atmospheric walking horror
@@ -2199,7 +2214,15 @@ export let radioPickupMesh, radioPickupLight;
 // isn't set to the actual look direction until then. A radio spawned at a
 // parse-time-only angle could easily land behind the player and never be
 // seen.
-export const RADIO_PICKUP_POS = { x: state.playerX + 4, z: state.playerZ };
+export const RADIO_PICKUP_POS = {
+  // Old formula (playerX+4, playerZ) predates the room rebuild and now
+  // lands inside the new TV<->radio divider wall (SAFEHOUSE_HALF_W/HALF_D,
+  // ROW_DIV) - embedded in wall geometry, invisible/unreachable. Moved to
+  // open floor in the SE radio/utility room, just in front of the desk
+  // (desk sits at HALF_W-1.3, -HALF_D+1.2 per world/safehouse.js).
+  x: SAFEHOUSE_CENTER.x + (SAFEHOUSE_HALF_W - 2.4),
+  z: SAFEHOUSE_CENTER.z + (-SAFEHOUSE_HALF_D + 2.4),
+};
 // floats at roughly eye/chest height - sidesteps ground-anchoring entirely
 // (no more risk of the body sinking into local terrain noise) and doubles
 // as a small diegetic hook: the player can react to it hanging there
@@ -3599,6 +3622,7 @@ window.addEventListener('resize', ()=>{
     lastResizeW = window.innerWidth; lastResizeH = window.innerHeight;
     renderer.setPixelRatio(baseDPR * settingsResScale);
     renderer.setSize(window.innerWidth, window.innerHeight);
+    resizeColorGrade();
     sizeBoltCanvas();
     updateRotateOverlay();
   }, 120);
@@ -3678,7 +3702,7 @@ function animate(){
     tickMenuIdle();
   }
 
-  renderer.render(scene, camera);
+  renderWithColorGrade();
 }
 
 
