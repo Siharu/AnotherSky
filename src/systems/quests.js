@@ -65,6 +65,18 @@ const QUESTS = [
     },
   },
   {
+    id: 'connect-relays',
+    name(){ return 'not just the one on the ridge — there are more of these masts standing dead out there'; },
+    have(state){ return state.hqTowerUnlocked; },
+    label(state){
+      const total = state.deadRelayTowers.length || 8;
+      const done = state.relayTowersConnected.size;
+      if(state.hqTowerUnlocked) return 'all connected';
+      if(done > 0) return `${done}/${total} connected`;
+      return state.doorUnlocked ? 'in progress' : 'not yet';
+    },
+  },
+  {
     id: 'leave-downtown',
     name(){ return 'that light isn\'t yours to walk toward — the road out is'; },
     have(state){ return !!state.enteredMap2; },
