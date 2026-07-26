@@ -31,6 +31,17 @@
 // world rather than a UI layer sitting outside it. Mechanics (id/have/
 // label wiring, what each entry reads off `state`) are unchanged -
 // this is a text-only pass.
+//
+// `thought(state)` - added alongside `name`/`label`, not replacing
+// either. `name` stays the found-transmission voice (external, what's
+// literally out there); `thought` is the character's own head talking
+// back to it - first person, uncertain, a little afraid to say the
+// quiet part. ui/hud.js shows this on tap/click of the current
+// objective row, styled as an interior aside rather than a detail
+// panel, so "more info" reads as the character thinking harder about
+// it rather than a wiki entry opening. Same have(state)-gated branching
+// as label() - the thought should shift once the objective's state
+// changes, same as everything else here.
 // LORE.length gives the true fragment total instead of a hardcoded
 // number that would silently drift out of sync if data/lore.js ever
 // gains or loses an entry.
@@ -42,6 +53,11 @@ const QUESTS = [
     name(){ return 'something out there is still transmitting'; },
     have(state){ return !!state.radioCollected; },
     label(state){ return state.radioCollected ? 'found' : 'searching'; },
+    thought(state){
+      return state.radioCollected
+        ? "i shouldn't have picked it up. i did anyway."
+        : "something's making that sound. i keep telling myself it's the wind.";
+    },
   },
   {
     id: 'reach-tower',
@@ -50,6 +66,12 @@ const QUESTS = [
     label(state){
       if(state.relayActive) return 'online';
       return state.radioCollected ? 'in progress' : 'not yet';
+    },
+    thought(state){
+      if(state.relayActive) return "it's talking again. i don't know if that's good.";
+      return state.radioCollected
+        ? "if i get to the ridge, someone answers. that's what i keep telling myself."
+        : "there's a shape on the ridge that doesn't move. i noticed it before i wanted to.";
     },
   },
   {
@@ -63,6 +85,13 @@ const QUESTS = [
       if(state.doorKeyStatus==='searching') return 'searching';
       return 'sealed';
     },
+    thought(state){
+      if(state.doorUnlocked) return "it opened on its own. i wish it hadn't.";
+      if(state.relayActive) return "it's not locked anymore. i haven't gone back to check.";
+      if(state.doorKeyStatus==='notHere') return "wrong key. of course it's the wrong key.";
+      if(state.doorKeyStatus==='searching') return "there has to be a key somewhere in this house.";
+      return "i tried it twice already. it wasn't ever locked with a key.";
+    },
   },
   {
     id: 'connect-relays',
@@ -75,6 +104,12 @@ const QUESTS = [
       if(done > 0) return `${done}/${total} connected`;
       return state.doorUnlocked ? 'in progress' : 'not yet';
     },
+    thought(state){
+      const done = state.relayTowersConnected.size;
+      if(state.hqTowerUnlocked) return "all of them, lit. i don't feel found. i feel located.";
+      if(done > 0) return "every one i wake up, something else wakes up with it.";
+      return state.doorUnlocked ? "there are more of these out there. i can feel it." : "one mast can't be the only one. there's never just one.";
+    },
   },
   {
     id: 'leave-downtown',
@@ -83,6 +118,12 @@ const QUESTS = [
     label(state){
       if(state.enteredMap2) return 'gone';
       return state.doorwayLightSeen ? 'walking' : 'not yet';
+    },
+    thought(state){
+      if(state.enteredMap2) return "i didn't look back at it. i want credit for that.";
+      return state.doorwayLightSeen
+        ? "it's warm-looking, that light. that's exactly why i shouldn't go to it."
+        : "there's a road out of here. i haven't let myself look for it yet.";
     },
   },
   {
@@ -93,6 +134,11 @@ const QUESTS = [
       if(state.collected.size >= LORE.length) return 'all found';
       if(state.collected.size > 0) return `${state.collected.size}/${LORE.length} found`;
       return 'none yet';
+    },
+    thought(state){
+      if(state.collected.size >= LORE.length) return "that's all of them. i remember all of it now. i wish i didn't.";
+      if(state.collected.size > 0) return "each page i find, i remember something i didn't ask to.";
+      return "there are pages of this missing. my handwriting, pages i don't remember writing.";
     },
   },
 ];
@@ -111,6 +157,7 @@ function getActiveQuests(state){
     name: q.name(state),
     have: q.have(state),
     label: q.label(state),
+    thought: q.thought(state),
   }));
 }
 
