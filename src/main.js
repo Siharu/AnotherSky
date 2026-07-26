@@ -25,7 +25,6 @@ import {
   exitRoadDirX, exitRoadDirZ, exitRoadPerpX, exitRoadPerpZ
 } from './world/worldData.js';
 import { resolveCollisions } from './systems/collision.js';
-import { gameConfirm } from './ui/dialog.js';
 import { renderHelp } from './ui/help.js';
 import { renderMemories } from './ui/memories.js';
 import { renderRadioLog } from './ui/radiolog.js';
@@ -39,9 +38,20 @@ import {
   playerTowerFarLines, playerTowerNearLines, playerTowerUnlockedLines,
   playerDreadHighLines, playerEyeStormLines
 } from './data/dialogue.js';
+import {
+  wakeBodyAcheLine,
+  radioPickupFloatingLine, radioPickupTryLine, radioPickupCallLine,
+  radioPickupNoAnswerLine, radioPickupCheckRoomsLine,
+  tvRoomDescriptionLines, tvStickyNoteLine, tvStickyNoteFollowupLine,
+  relayConnectLines, relayConnectFinalLine,
+  hqApproachBlockedLines, hqApproachUnlockedLine,
+  tvWhoAreYouLine, tvWhoAreYouPlayerLine, tvStickyNoteHQLine,
+  swarmDeathLines, holoMapUnlockLine
+} from './data/dialogue.js';
 import { startGlitchScramble, stopGlitchScramble } from './ui/credits.js';
 import { flashAutosaveIndicator, minimapCanvas, minimapCtx, radioBtn, radioTicker, updateMinimap, updateWeatherLabel, updateObjectivePanel } from './ui/hud.js';
 import { bigmapCanvas, bigmapCtx, BIG_MAP_WORLD, worldToBig, updateFowAt, drawBigMap } from './ui/bigmap.js';
+import { initHoloMap, buildHoloTowers, updateHoloMap, openHoloMap, closeHoloMap } from './ui/holomap.js';
 import { showWhisper, updateWhisper, updateWhisperCooldown, pickAmbientWhisper, pickWhisperOnCollect } from './ui/whisper.js';
 import {
   ghuulList, ghuulSpawnThresholds, createGhuul, maybeSpawnGhuul,
@@ -114,7 +124,7 @@ import {
   buildSafehouse, buildSafehouseExterior,
   updateDoorFlash, updateSafehouseInterior,
   NOTEBOOK_POS, LOCKED_DOOR_POS, BED_TABLE_POS, SAFEHOUSE_DOOR_YAW,
-  CALENDAR_POS, STORAGE_DRAWER_POS, CALENDAR_LAST_DAY,
+  CALENDAR_POS, STORAGE_DRAWER_POS, CALENDAR_LAST_DAY, TV_POS,
   SAFEHOUSE_CENTER, SAFEHOUSE_HALF_W, SAFEHOUSE_HALF_D,
 } from './world/safehouse.js';
 import { updateDoorTransitions } from './systems/doors.js';
@@ -1666,7 +1676,42 @@ let radioTowerBeaconMesh, radioTowerHeight, radioTowerBeaconLight, radioTowerPul
    almost out rather than a live signal. */
 const DEAD_RELAY_COUNT = 8;
 const deadRelayFlickerLights = []; // { mesh, light, glow, phase, flickers }
-function buildDeadRelayTower(x, z, flickers){
+// dangling wire prop (session addition): a few sagging cable strands
+// hanging off the lattice - chained short cylinder segments drooping at
+// an increasing angle, cheap stand-in for a real catenary curve. Purely
+// additive to the existing dead-relay visuals below; doesn't touch
+// deadRelayTowers/relayTowersConnected state at all.
+function addDanglingWires(group, towerHeight, count){
+  const wireMat = new THREE.MeshBasicMaterial({ color:0x0a0a0c, fog:true });
+  patchFogToDistance(wireMat);
+  const wires = new THREE.Group();
+  for(let i=0;i<count;i++){
+    const ang = (i/count)*Math.PI*2 + Math.random()*0.6;
+    const attachY = towerHeight*(0.35+Math.random()*0.45);
+    const attachR = 1.5;
+    const strand = new THREE.Group();
+    strand.position.set(Math.cos(ang)*attachR, attachY, Math.sin(ang)*attachR);
+    let segY = 0, segAng = 0.15;
+    const segCount = 3+Math.floor(Math.random()*3);
+    for(let s=0;s<segCount;s++){
+      const segLen = 0.4+Math.random()*0.3;
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.018,segLen,4), wireMat);
+      segAng += 0.12+Math.random()*0.15;
+      seg.position.set(Math.sin(segAng)*segLen*0.5, segY-Math.cos(segAng)*segLen*0.5, 0);
+      seg.rotation.z = -segAng;
+      strand.add(seg);
+      segY -= Math.cos(segAng)*segLen;
+    }
+    wires.add(strand);
+  }
+  group.add(wires);
+  return wires;
+}
+// keyed by the same `id` deadRelayTowers/relayTowersConnected already use,
+// so connectDeadRelay(id) below can find each tower's dressing without
+// any change to how towers are tracked elsewhere.
+const deadRelayDressing = {}; // id -> { wireGroup, beaconMesh, beaconLight, glow }
+function buildDeadRelayTower(x, z, flickers, id){
   const ty = groundHeightAt(x, z);
   const group = new THREE.Group();
   // slightly warmer/rustier than Relay Seven's clean steel - these have
@@ -1678,8 +1723,28 @@ function buildDeadRelayTower(x, z, flickers){
   const legRadius = 3.2;
   const legGeo = new THREE.CylinderGeometry(0.2, 0.3, towerHeight, 6);
   const tilt = (Math.random()-0.5)*0.05; // barely-there lean, just enough to read as long-neglected rather than freshly modeled
+  // half-broken (session addition): one randomly-chosen leg is visibly
+  // snapped partway up (standing stub + kicked-out broken section)
+  // instead of running the full height.
+  const brokenLegIndex = Math.floor(Math.random()*4);
   for(let i=0;i<4;i++){
     const ang = (Math.PI/2)*i + Math.PI/4;
+    if(i === brokenLegIndex){
+      const snapT = 0.4+Math.random()*0.25;
+      const stubH = towerHeight*snapT;
+      const stub = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.3,stubH,6), steelMat);
+      stub.position.set(Math.cos(ang)*legRadius*0.5, stubH/2, Math.sin(ang)*legRadius*0.5);
+      stub.rotation.z = Math.cos(ang)*0.05 + tilt;
+      stub.rotation.x = -Math.sin(ang)*0.05 + tilt;
+      group.add(stub);
+      const brokenLen = towerHeight*(1-snapT)*0.8;
+      const broken = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.22,brokenLen,6), steelMat);
+      broken.position.set(Math.cos(ang)*legRadius*0.5+Math.cos(ang)*0.6, stubH+brokenLen*0.3, Math.sin(ang)*legRadius*0.5+Math.sin(ang)*0.6);
+      broken.rotation.z = Math.cos(ang)*0.05 + tilt + 0.7*(ang>Math.PI?1:-1);
+      broken.rotation.x = -Math.sin(ang)*0.05 + tilt;
+      group.add(broken);
+      continue;
+    }
     const leg = new THREE.Mesh(legGeo, steelMat);
     leg.position.set(Math.cos(ang)*legRadius*0.5, towerHeight/2, Math.sin(ang)*legRadius*0.5);
     leg.rotation.z = Math.cos(ang)*0.05 + tilt;
@@ -1701,22 +1766,23 @@ function buildDeadRelayTower(x, z, flickers){
   mast.position.y = towerHeight + 4;
   group.add(mast);
 
-  if(flickers){
-    // dying battery-backup light rather than a steady signal beacon -
-    // amber, not Relay Seven's red, so it's readable at a glance as a
-    // different (lesser) thing even from a distance.
-    const beaconMat = new THREE.MeshBasicMaterial({ color:0xcf8a2e, transparent:true, opacity:0 });
-    const beaconMesh = new THREE.Mesh(new THREE.SphereGeometry(0.4,8,8), beaconMat);
-    beaconMesh.position.y = towerHeight + 8.2;
-    group.add(beaconMesh);
-    const light = new THREE.PointLight(0xcf8a2e, 0, 30, 2);
-    light.position.y = towerHeight + 8.2;
-    group.add(light);
-    const glow = addGlow(group, 0xcf8a2e, 3.2, 0.5);
-    glow.position.y = towerHeight + 8.2;
-    glow.material.opacity = 0;
-    deadRelayFlickerLights.push({ mesh:beaconMesh, light, glow, phase:Math.random()*100 });
-  }
+  const wireGroup = addDanglingWires(group, towerHeight, 4+Math.floor(Math.random()*3));
+
+  // beacon fixture now built on every tower (session change), not just
+  // `flickers` ones - connectDeadRelay(id) needs somewhere to switch a
+  // light on for towers that were fully dark before being connected.
+  const beaconMat = new THREE.MeshBasicMaterial({ color:0xcf8a2e, transparent:true, opacity:0 });
+  const beaconMesh = new THREE.Mesh(new THREE.SphereGeometry(0.4,8,8), beaconMat);
+  beaconMesh.position.y = towerHeight + 8.2;
+  group.add(beaconMesh);
+  const light = new THREE.PointLight(0xcf8a2e, 0, 30, 2);
+  light.position.y = towerHeight + 8.2;
+  group.add(light);
+  const glow = addGlow(group, 0xcf8a2e, 3.2, 0.5);
+  glow.position.y = towerHeight + 8.2;
+  glow.material.opacity = 0;
+  if(flickers) deadRelayFlickerLights.push({ mesh:beaconMesh, light, glow, phase:Math.random()*100 });
+  if(id!=null) deadRelayDressing[id] = { wireGroup, beaconMesh, beaconLight:light, glow, group };
 
   group.position.set(x, ty, z);
   scene.add(group);
@@ -1735,7 +1801,8 @@ function buildDeadRelayTower(x, z, flickers){
     attempt++;
     if(Math.hypot(x, z) < 70) continue; // stay clear of Relay Seven
     if(Math.hypot(x-(-60), z-45) < 60) continue; // stay clear of the safehouse
-    buildDeadRelayTower(x, z, placed % 3 === 0); // every third one gets a dying flicker light, rest are fully dark
+    buildDeadRelayTower(x, z, placed % 3 === 0, placed); // every third one gets a dying flicker light, rest are fully dark
+    state.deadRelayTowers.push({ id: placed, x, z });
     placed++;
   }
 }
@@ -1753,7 +1820,124 @@ function updateDeadRelayFlickers(dt){
     f.glow.material.opacity = on * 0.5;
   }
 }
-function updateRadioTowerBeacon(){
+// session addition: visual half of connectDeadRelay(id) - wires come
+// down, the amber dying-light treatment swaps for a steady breathing
+// red beacon (same visual language as Relay Seven, so the player reads
+// "this one's alive now"). Pulled out of connectDeadRelay() itself so it
+// can also be reapplied on load (see restoreFromSave below) without
+// duplicating the state-mutation/dialogue/save side of that function.
+function applyDeadRelayConnectedVisual(id){
+  const d = deadRelayDressing[id];
+  if(!d) return;
+  d.group.remove(d.wireGroup);
+  d.beaconMesh.material.color.setHex(0xff3b3b);
+  d.beaconLight.color.setHex(0xff3b3b);
+  const fi = deadRelayFlickerLights.findIndex(f=>f.mesh===d.beaconMesh);
+  if(fi>=0) deadRelayFlickerLights.splice(fi,1);
+}
+function updateConnectedRelayBeacons(){
+  if(!state.relayTowersConnected.size) return;
+  const pulse = 0.55 + Math.sin(performance.now()*0.0022)*0.45;
+  for(const id of state.relayTowersConnected){
+    const d = deadRelayDressing[id];
+    if(!d) continue;
+    d.beaconMesh.material.opacity = 0.5 + pulse*0.5;
+    d.beaconLight.intensity = 1.4 + pulse*1.8;
+    if(d.glow) d.glow.material.opacity = 0.3 + pulse*0.35;
+  }
+}
+/* ---------- HQ RELAY TOWER (10th, final) ----------
+   The tenth mast, built ~1.7x Relay Seven's scale so it reads as a
+   different order of structure entirely - dwarfing everything else on
+   the skyline, visible from almost anywhere past the downtown ring.
+   Placed just outside GROUND_REAL_RADIUS (220) at a bearing well clear
+   of both Relay Seven's dead-relay ring and the Spire, so it doesn't
+   compete visually with either landmark. Reachable in principle at any
+   time distance-wise, but updateHQTowerBarrier() (below) pushes the
+   player back like an invisible wall for as long as
+   state.hqTowerUnlocked is false - "always looks close, never gets
+   closer" from the player's perspective, since the barrier sits well
+   short of the tower's own footprint. */
+const HQ_ANGLE = -Math.PI*0.83, HQ_DIST = 255;
+export const HQ_TOWER_POS = { x: Math.cos(HQ_ANGLE)*HQ_DIST, z: Math.sin(HQ_ANGLE)*HQ_DIST };
+const HQ_BARRIER_RADIUS = 60; // distance from HQ_TOWER_POS the invisible wall sits at while locked
+let hqBeaconMesh, hqBeaconLight, hqTowerHeight;
+{
+  const hx = HQ_TOWER_POS.x, hz = HQ_TOWER_POS.z;
+  const hy = groundHeightAt(hx, hz);
+  const group = new THREE.Group();
+  const steelMat = new THREE.MeshToonMaterial({ color:0x15151a, gradientMap:toonRamp });
+  patchFogToDistance(steelMat);
+  hqTowerHeight = radioTowerHeight * 1.7;
+  const legRadius = 5.6;
+  const legGeo = new THREE.CylinderGeometry(0.36, 0.5, hqTowerHeight, 6);
+  for(let i=0;i<4;i++){
+    const ang = (Math.PI/2)*i + Math.PI/4;
+    const leg = new THREE.Mesh(legGeo, steelMat);
+    leg.position.set(Math.cos(ang)*legRadius*0.5, hqTowerHeight/2, Math.sin(ang)*legRadius*0.5);
+    leg.rotation.z = Math.cos(ang)*0.05;
+    leg.rotation.x = -Math.sin(ang)*0.05;
+    group.add(leg);
+  }
+  const ringCount = 13;
+  for(let i=0;i<ringCount;i++){
+    const t = i/(ringCount-1);
+    const y = t*hqTowerHeight;
+    const r = legRadius*0.5*(1-t*0.55) + 0.6;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.08, 4, 8), steelMat);
+    ring.rotation.x = Math.PI/2;
+    ring.position.y = y;
+    group.add(ring);
+  }
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.32,16,6), steelMat);
+  mast.position.y = hqTowerHeight + 8;
+  group.add(mast);
+  const beaconMat = new THREE.MeshBasicMaterial({ color:0xff3b3b, transparent:true, opacity:0.95 });
+  hqBeaconMesh = new THREE.Mesh(new THREE.SphereGeometry(0.9,10,10), beaconMat);
+  hqBeaconMesh.position.y = hqTowerHeight + 16.4;
+  group.add(hqBeaconMesh);
+  const beaconLight = new THREE.PointLight(0xff3b3b, 3.4, 80, 2);
+  beaconLight.position.y = hqTowerHeight + 16.4;
+  group.add(beaconLight);
+  hqBeaconLight = beaconLight;
+  const towerGlow = addGlow(group, 0xff3b3b, 8, 0.7);
+  towerGlow.position.y = hqTowerHeight + 16.4;
+  hqBeaconMesh.userData.glow = towerGlow;
+  group.position.set(hx, hy, hz);
+  scene.add(group);
+}
+function updateHQTowerBeacon(){
+  if(!hqBeaconMesh) return;
+  // Slower, heavier pulse than Relay Seven's - reads as something much
+  // larger breathing, not the same rhythm at a different scale.
+  const pulse = 0.55 + Math.sin(performance.now()*0.0013)*0.45;
+  hqBeaconMesh.material.opacity = 0.5 + pulse*0.5;
+  if(hqBeaconMesh.userData.glow) hqBeaconMesh.userData.glow.material.opacity = 0.35 + pulse*0.4;
+  if(hqBeaconLight) hqBeaconLight.intensity = 2.6 + pulse*3.2;
+}
+let hqBarrierLastLineAt = -999;
+function updateHQTowerBarrier(dt){
+  updateHQTowerBeacon();
+  if(state.hqTowerUnlocked) return;
+  const dx = state.playerX - HQ_TOWER_POS.x, dz = state.playerZ - HQ_TOWER_POS.z;
+  const d = Math.hypot(dx, dz);
+  if(d < HQ_BARRIER_RADIUS){
+    // Soft push-back along the radial direction, same shape as
+    // state.knockback elsewhere - not a hard teleport, just makes
+    // walking straight at it feel like wading against a current that
+    // wins. Scaled by how far inside the barrier they've pushed, so it
+    // ramps rather than snapping.
+    const push = (HQ_BARRIER_RADIUS - d) * 2.2;
+    const nx = dx/Math.max(d,0.001), nz = dz/Math.max(d,0.001);
+    state.playerX += nx*push*dt;
+    state.playerZ += nz*push*dt;
+    if(state.elapsed - hqBarrierLastLineAt > 14){
+      hqBarrierLastLineAt = state.elapsed;
+      showLineBox(pickFrom(hqApproachBlockedLines), { hold:2000 });
+    }
+  }
+}
+
   if(!radioTowerBeaconMesh) return;
   const pulse = 0.55 + Math.sin(performance.now()*0.0022)*0.45;
   radioTowerBeaconMesh.material.opacity = 0.5 + pulse*0.5;
@@ -1768,6 +1952,8 @@ function updateRadioTowerBeacon(){
 export function updateRadioTower(dt){
   updateRadioTowerBeacon();
   updateDeadRelayFlickers(dt);
+  updateConnectedRelayBeacons();
+  updateHQTowerBarrier(dt);
   if(state.minimapUnlocked) return;
   const d = Math.hypot(state.playerX - RADIO_TOWER_POS.x, state.playerZ - RADIO_TOWER_POS.z);
   if(d < RADIO_TOWER_UNLOCK_RADIUS){
@@ -2132,16 +2318,19 @@ function collectRadio(){
   state.radioOn = true; // switches itself on - one less thing to figure out mid-panic
   radioBtn.classList.add('toggled');
   resetRadioTimer(3);
-  showLineBox('...a radio. still has weight to it. still might work.', { hold:1900 }).then(()=>{
-    // Guaranteed follow-up beat, not an RNG broadcast (radioTowerHintLines
-    // in data/dialogue.js still fires separately, ~40% chance per
-    // broadcast, once minimapUnlocked is false - see systems/radio.js).
-    // This one line is the actual tutorial hook: the player should not
-    // have to get lucky on a random transmission to learn there's a
-    // tower at all. Fires once, right after the pickup line finishes,
-    // before the radio's had a chance to say anything of its own.
-    showLineBox("...there's a note taped to the back. \"reach the nearest tower.\" someone else's handwriting.", { hold:2400 });
-  });
+  // Floating-radio noticing beat -> picks it up -> tries calling out on
+  // it -> realizes it's receive-only -> decides to go check the other
+  // rooms. Replaces the old single "...a radio. still has weight to it."
+  // line plus the deterministic "note taped to the back" tutorial hook -
+  // that hook's job (pointing the player at the relay towers) now
+  // belongs to the safehouse TV/sticky-note beat instead, so the towers
+  // get introduced diegetically in a room the player has to go find,
+  // rather than handed to them the instant they pick the radio up.
+  showLineBox(radioPickupFloatingLine, { hold:1600 }).then(()=>
+    showLineBox(radioPickupTryLine, { hold:1500 })).then(()=>
+    showLineBox(radioPickupCallLine, { hold:1500 })).then(()=>
+    showLineBox(radioPickupNoAnswerLine, { hold:1600 })).then(()=>
+    showLineBox(radioPickupCheckRoomsLine, { hold:1800 }));
   writeSave('checkpoint');
 }
 /* ---------- GHUULS (the watchers) ----------
@@ -2293,6 +2482,8 @@ function tryInteract(){
   if(state.nearAnsweringMachine){ playAnsweringMachine(); return; }
   if(state.nearCalendar){ checkCalendar(); return; }
   if(state.nearStorageDrawer){ checkStorageDrawer(); return; }
+  if(state.nearTV){ checkTV(); return; }
+  if(state.nearDeadRelayId>=0){ connectDeadRelay(state.nearDeadRelayId); return; }
   if(state.nearOrbId<0) return;
   const orbData = orbMeshes.find(o=>o.id===state.nearOrbId);
   if(!orbData || orbData.collected) return;
@@ -2379,6 +2570,43 @@ function triggerEnding(){
     el.classList.add('show');
     el.addEventListener('click', ()=> location.reload(), {once:true});
   }, 900);
+}
+
+// Ghuul swarm death - checked every frame once 4+ HUNT-state ghuuls are
+// all within close range of the player at once (see checkGhuulSwarm()
+// below, called from animate()). Reuses the same #ending-screen DOM
+// triggerEnding() already uses rather than building a second death-UI
+// element, but plays swarmDeathLines through showLineBox first so the
+// lines land as spoken dread beats, not a screen text - lines are
+// deliberately not addressed to the player (see data/dialogue.js's
+// comment on swarmDeathLines), so this cuts to the ending screen with
+// no attempt to explain who's talking.
+function triggerSwarmDeath(){
+  if(state.swarmDeathTriggered) return;
+  state.swarmDeathTriggered = true;
+  state.started = false;
+  deleteSave();
+  let p = Promise.resolve();
+  for(const line of swarmDeathLines){
+    p = p.then(()=> showLineBox(line, { hold:1700 }));
+  }
+  p.then(()=>{
+    const el = document.getElementById('ending-screen');
+    document.getElementById('ending-text').textContent =
+      "You couldn't fix it either. Someone else is holding the radio now.";
+    el.classList.add('show');
+    el.addEventListener('click', ()=> location.reload(), {once:true});
+  });
+}
+const GHUUL_SWARM_RADIUS = 13, GHUUL_SWARM_COUNT = 4;
+function checkGhuulSwarm(){
+  if(state.swarmDeathTriggered) return;
+  let n = 0;
+  for(const g of ghuulList){
+    if(g.aiState !== 'HUNT') continue;
+    if(Math.hypot(g.x - state.playerX, g.z - state.playerZ) <= GHUUL_SWARM_RADIUS) n++;
+    if(n >= GHUUL_SWARM_COUNT){ triggerSwarmDeath(); return; }
+  }
 }
 
 // collectWhispers/pickWhisperOnCollect() now live in ui/whisper.js —
@@ -2481,6 +2709,67 @@ function checkStorageDrawer(){
   writeSave('checkpoint');
 }
 
+// TV + sticky note. Three stages, tracked by state.tvStage rather than a
+// bag of booleans so the progression can't accidentally skip a stage:
+// 0 -> first interact plays the room-description beat and turns the set
+// to static (tvStage 1). A second, separate interact (any time after)
+// reads the sticky note, the actual in-world source of the "find every
+// relay tower" objective. Once hqTowerUnlocked flips true and the player
+// comes back here, the next interact instead plays the "who are you"
+// beat (tvStage 2, one-shot) plus the older second sticky note about the
+// HQ plan.
+function checkTV(){
+  if(state.tvStage===0){
+    state.tvStage = 1;
+    showLineBox(tvRoomDescriptionLines[0], { hold:2600 }).then(()=>
+      showLineBox(tvRoomDescriptionLines[1], { hold:2600 })).then(()=>
+      showLineBox(tvStickyNoteLine, { hold:4200 })).then(()=>
+      showLineBox(tvStickyNoteFollowupLine, { hold:2800 }));
+    writeSave('checkpoint');
+    return;
+  }
+  if(state.hqTowerUnlocked && state.tvStage===1){
+    state.tvStage = 2;
+    showLineBox(tvWhoAreYouLine, { hold:2200, ransom:true }).then(()=>
+      showLineBox(tvWhoAreYouPlayerLine, { hold:2400 })).then(()=>
+      showLineBox(tvStickyNoteHQLine, { hold:4000 }));
+    writeSave('checkpoint');
+    return;
+  }
+  showLineBox(tvStickyNoteLine, { hold:4200 });
+}
+
+// Relay tower connection quest. Each of the 8 dead towers (built in the
+// DEAD RELAY TOWERS block below) gets connected independently and only
+// once; relayConnectLines is pulled in order (not randomly) so the run
+// of lines reads as mounting unease rather than a random flavor pool.
+// The last connection (relayTowersConnected.size hits deadRelayTowers.
+// length) fires relayConnectFinalLine instead and flips hqTowerUnlocked,
+// which is what actually opens the HQ tower's soft collision wall (see
+// updateHQTowerBarrier()).
+const HOLOMAP_UNLOCK_COUNT = 5; // ui/holomap.js - fifth connection unlocks the holographic map
+function connectDeadRelay(id){
+  if(state.relayTowersConnected.has(id)) return;
+  state.relayTowersConnected.add(id);
+  applyDeadRelayConnectedVisual(id);
+  const total = state.deadRelayTowers.length;
+  const done = state.relayTowersConnected.size;
+  if(done >= total){
+    state.hqTowerUnlocked = true;
+    showLineBox(relayConnectFinalLine, { hold:4400 }).then(()=>
+      showLineBox(hqApproachUnlockedLine, { hold:2800 }));
+  } else {
+    const line = relayConnectLines[Math.min(done-1, relayConnectLines.length-1)];
+    showLineBox(line, { hold:2400 });
+    if(done === HOLOMAP_UNLOCK_COUNT){
+      const hb = document.getElementById('holo-btn');
+      if(hb) hb.classList.remove('locked');
+      setTimeout(()=> showLineBox(holoMapUnlockLine, { hold:2800 }), 2600);
+    }
+  }
+  writeSave('checkpoint');
+}
+
 // radioAmbientLines/etc., bearingToCompassAngle(), pickSituationalRadioLine(),
 // broadcastRadio(), updateRadio() now live in systems/radio.js — imported
 // above. toggleRadio() (below) calls resetRadioTimer() instead of writing
@@ -2560,6 +2849,13 @@ function restoreFromSave(save){
   state.returnCueShown = !!save.returnCueShown;
   state.doorUnlocked = !!save.doorUnlocked;
   state.enteredMap2 = !!save.enteredMap2;
+  state.relayTowersConnected = new Set(save.relayTowersConnected||[]);
+  for(const id of state.relayTowersConnected) applyDeadRelayConnectedVisual(id);
+  state.hqTowerUnlocked = !!save.hqTowerUnlocked;
+  state.tvStage = save.tvStage||0;
+  if(state.relayTowersConnected.size >= HOLOMAP_UNLOCK_COUNT){
+    const hb = $('holo-btn'); if(hb) hb.classList.remove('locked');
+  }
   state.collected = new Set(save.collected||[]);
   for(const o of orbMeshes){
     if(state.collected.has(o.id) && !o.collected){ o.collected = true; scene.remove(o.mesh); }
@@ -2817,10 +3113,10 @@ $('hub-settings').addEventListener('click', ()=>{
   hubOverlay.classList.remove('open'); // hide hub underneath so it doesn't stack with settings
   settingsOverlay.classList.add('open');
 });
-$('hub-load').addEventListener('click', async ()=>{
+$('hub-load').addEventListener('click', ()=>{
   corruptPress($('hub-load'));
   if(!hasSave()){ showHubFlavor('there is nothing here to return to.'); return; }
-  if(!await gameConfirm('Load your last save? Any progress since then will be lost.', 'LOAD SAVE')) return;
+  if(!confirm('Load your last save? Any progress since then will be lost.')) return;
   const raw = (()=>{ try{ return localStorage.getItem(SAVE_KEY); }catch(e){ return null; } })();
   if(!raw) return;
   try{
@@ -2828,9 +3124,9 @@ $('hub-load').addEventListener('click', async ()=>{
     restoreFromSave(JSON.parse(raw));
   }catch(e){ console.error('save data corrupt, ignoring', e); }
 });
-$('hub-quit').addEventListener('click', async ()=>{
+$('hub-quit').addEventListener('click', ()=>{
   corruptPress($('hub-quit'));
-  if(!await gameConfirm('Quit to the title screen? Make sure anything you want kept has been saved.', 'QUIT')) return;
+  if(!confirm('Quit to the title screen? Make sure anything you want kept has been saved.')) return;
   location.reload();
 });
 
@@ -3144,6 +3440,7 @@ export async function playWakeDialogue(){
   // notice it's actually filled with writing -> only then react to that
   // writing being recognizably his own.
   const lines = [
+    { text: wakeBodyAcheLine, hold:1300 },
     { text:'...ceiling. unknown ceiling.', hold:1400 },
     { text:'unknown room. where — where am I.', hold:1500 },
     { text:'there\'s a notebook on the floor.', hold:1100 },
@@ -3342,6 +3639,7 @@ function animate(){
     updatePlayer(dt);
     updateShadowCamera();
     updateGhuul(dt, playStinger);
+    checkGhuulSwarm();
     updateOrbs(dt);
     updateExitBlackout(dt);
     updateRain(dt);
@@ -3357,7 +3655,7 @@ function animate(){
       // window at all (only one actually exists: east wall, radio room).
       // Scope it to actual proximity to that window instead.
       const winX = SAFEHOUSE_CENTER.x + (SAFEHOUSE_HALF_W-0.02);
-      const winZ = SAFEHOUSE_CENTER.z + (SAFEHOUSE_HALF_D-2.2);
+      const winZ = SAFEHOUSE_CENTER.z + (-SAFEHOUSE_HALF_D+2.0); // radio/utility room moved to the south side in the rebuilt layout
       const nearWindow = state.insideSafehouse
         && Math.hypot(state.playerX-winX, state.playerZ-winZ) < 3.5;
       const showWindowRain = nearWindow && getNearbySquallCount() > 0;
@@ -3370,6 +3668,7 @@ function animate(){
     evaluateDirector(dt, triggerLightning);
     tickAutosave(dt);
     updateObjectivePanel();
+  updateHoloMap(dt);
   } else {
     updateSky(dt*0.3);
     updateDust(dt);
@@ -3447,7 +3746,7 @@ const bigmapClose = $('bigmap-close');
 minimapEl.addEventListener('click', ()=>{
   if(!state.minimapUnlocked) return;
   updateFowAt(state.playerX, state.playerZ); // stamp current pos in case they haven't moved since last tick
-  drawBigMap(orbMeshes, RADIO_TOWER_POS);
+  drawBigMap(orbMeshes, RADIO_TOWER_POS, HQ_TOWER_POS);
   bigmapOverlay.classList.add('open');
   state.started = false; // pause movement while map is open
 });
@@ -3457,6 +3756,30 @@ bigmapClose.addEventListener('click', ()=>{
 });
 bigmapOverlay.addEventListener('click', e=>{
   if(e.target===bigmapOverlay){ bigmapOverlay.classList.remove('open'); state.started=true; }
+});
+
+// Holographic map overlay - see ui/holomap.js. Locked (icon-btn.locked,
+// same visual language radio-btn uses before pickup) until
+// state.relayTowersConnected.size reaches HOLOMAP_UNLOCK_COUNT (see
+// connectDeadRelay()); the actual 3D scene is built once, up front,
+// during setup (initHoloMap()/buildHoloTowers() below), so opening it
+// for the first time doesn't have a construction hitch.
+const holoBtn = $('holo-btn');
+const holoOverlay = $('holomap-overlay');
+const holoClose = $('holomap-close');
+initHoloMap();
+buildHoloTowers(RADIO_TOWER_POS, HQ_TOWER_POS);
+holoBtn.addEventListener('click', ()=>{
+  if(holoBtn.classList.contains('locked')) return;
+  openHoloMap();
+  state.started = false;
+});
+holoClose.addEventListener('click', ()=>{
+  closeHoloMap();
+  state.started = true;
+});
+holoOverlay.addEventListener('click', e=>{
+  if(e.target===holoOverlay){ closeHoloMap(); state.started=true; }
 });
 
 // updateGhuul() now lives in entities/ghuuls.js — imported above.
@@ -3561,6 +3884,26 @@ function updateOrbs(dt){
   state.nearStorageDrawer = facingTarget(STORAGE_DRAWER_POS.x, STORAGE_DRAWER_POS.z, 1.5);
   if(state.nearStorageDrawer){
     interactPrompt.textContent = ('ontouchstart' in window) ? 'touch to try the latch' : '[E] try the latch';
+    interactPrompt.classList.add('show');
+    interactBtn.classList.add('active');
+    state.nearOrbId = -1;
+    return;
+  }
+  state.nearTV = facingTarget(TV_POS.x, TV_POS.z, 1.8);
+  if(state.nearTV){
+    interactPrompt.textContent = ('ontouchstart' in window) ? 'touch to look at the tv' : '[E] look at the tv';
+    interactPrompt.classList.add('show');
+    interactBtn.classList.add('active');
+    state.nearOrbId = -1;
+    return;
+  }
+  state.nearDeadRelayId = -1;
+  for(const t of state.deadRelayTowers){
+    if(state.relayTowersConnected.has(t.id)) continue;
+    if(facingTarget(t.x, t.z, 4.5)){ state.nearDeadRelayId = t.id; break; }
+  }
+  if(state.nearDeadRelayId>=0){
+    interactPrompt.textContent = ('ontouchstart' in window) ? 'touch to connect the radio' : '[E] connect the radio';
     interactPrompt.classList.add('show');
     interactBtn.classList.add('active');
     state.nearOrbId = -1;
