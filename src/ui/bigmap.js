@@ -91,7 +91,7 @@ export function updateFowAt(wx, wz){
    harmless before (everything was inside the fixed window by
    definition), but necessary now that buildings/orbs/ghuuls arbitrarily
    far from the player may exist in loaded state. */
-export function drawBigMap(orbMeshes, RADIO_TOWER_POS){
+export function drawBigMap(orbMeshes, RADIO_TOWER_POS, HQ_TOWER_POS){
   if(!bigmapCtx || !bigmapCanvas) return;
   const W = bigmapCanvas.width, H = bigmapCanvas.height;
   const S = W / BIG_MAP_VIEW;
@@ -217,6 +217,27 @@ export function drawBigMap(orbMeshes, RADIO_TOWER_POS){
     { label:'Downtown', x:0, z:-60, col:'rgba(201,194,182,0.55)', r:0 },
     { label:'Exit Road', x:exitRoadDirX*200, z:exitRoadDirZ*200, col:'rgba(201,194,182,0.4)', r:0 },
   ];
+  // Dead relay towers: unconnected ones blink red (a "go here next" cue,
+  // matching the requested "red blinking dot" indicator) so a player who
+  // can't find them by walking around still has the big map to lean on;
+  // once connected they fade to a dim marker like any other landmark,
+  // same treatment lore fragments get once picked up elsewhere.
+  const blink = 0.5 + 0.5*Math.sin(performance.now()*0.006);
+  for(const t of state.deadRelayTowers){
+    const connected = state.relayTowersConnected.has(t.id);
+    landmarks.push({
+      label: connected ? 'Relay (connected)' : 'Relay',
+      x: t.x, z: t.z, r: connected ? 3 : 4,
+      col: connected ? 'rgba(160,150,130,0.4)' : `rgba(255,59,59,${0.5+blink*0.5})`,
+    });
+  }
+  if(HQ_TOWER_POS){
+    landmarks.push({
+      label: state.hqTowerUnlocked ? 'HQ Relay' : '???',
+      x: HQ_TOWER_POS.x, z: HQ_TOWER_POS.z, r:5,
+      col: state.hqTowerUnlocked ? '#ff3b3b' : 'rgba(255,59,59,0.35)',
+    });
+  }
   ctx.font = `${Math.round(W*0.019)}px monospace`;
   ctx.textAlign='center';
   const EDGE_MARGIN = 22; // keep clamped markers/arrows off the canvas edge, room for the arrow + label
