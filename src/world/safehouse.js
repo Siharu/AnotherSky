@@ -142,7 +142,7 @@ function makeCarpetTexture(){
 
 // featureless near-black void material for the wake-up room's locked
 // door glitch treatment reference (the room itself is normal now - only
-// the door face reads as "wrong" - see lockedDoorMat below).
+// the door face reads as "wrong" - see wrongSeamMesh below).
 function voidMat(){
   return new THREE.MeshBasicMaterial({ color: 0x030204, fog:false });
 }
@@ -292,17 +292,85 @@ function buildSafehouse(){
   // same chromatic-glitch treatment as before (see updateSafehouseInterior)
   // so the player reads "something is wrong here" before ever trying it.
   const lockedDoorW = WAKE_DOOR_HALF*2-0.1, lockedDoorH = SAFEHOUSE_WALL_H-0.3;
+  // doorframe - jambs + lintel, static (mounted to the wall, not the
+  // swinging pivot) - same pattern as the main exit door frame above
+  const knobMat = safehouseMat(0x2a2a2c, 0x0a0a0a);
+  for(const side of [-1,1]){
+    const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.14, SAFEHOUSE_WALL_H, SAFEHOUSE_WALL_T+0.08), frameMat);
+    jamb.position.set(COL_W, SAFEHOUSE_WALL_H/2, WAKE_DOOR_Z + side*(lockedDoorW/2+0.07));
+    group.add(jamb);
+  }
+  const lockedLintel = new THREE.Mesh(new THREE.BoxGeometry(SAFEHOUSE_WALL_T+0.12, lockedDoorW+0.28, SAFEHOUSE_WALL_H-lockedDoorH+0.06), frameMat);
+  // note: lintel spans the Z axis here since this doorway is cut into an
+  // X-facing wall (COL_W), not a Z-facing one like the main exit
+  lockedLintel.position.set(COL_W, SAFEHOUSE_WALL_H - (SAFEHOUSE_WALL_H-lockedDoorH)/2 + 0.02, WAKE_DOOR_Z);
+  group.add(lockedLintel);
+
   lockedDoorPivot = new THREE.Group();
   lockedDoorPivot.position.set(COL_W, lockedDoorH/2, WAKE_DOOR_Z);
   group.add(lockedDoorPivot);
-  const lockedDoorMat = new THREE.MeshBasicMaterial({ color:0x8a5ac0, fog:false });
-  const lockedDoorMesh = new THREE.Mesh(new THREE.BoxGeometry(lockedDoorW, lockedDoorH, 0.08), lockedDoorMat);
+  // child[0] is what updateSafehouseInterior flashes/shakes for the
+  // glitch effect - kept small (a single warped seam down the door)
+  // instead of covering the whole face, so the "wrongness" reads as one
+  // unsettling detail rather than the entire door strobing color.
+  const wrongSeamMat = new THREE.MeshBasicMaterial({ color:0x8a5ac0, fog:false });
+  const wrongSeamMesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, lockedDoorH*0.82, 0.03), wrongSeamMat);
+  wrongSeamMesh.position.set(lockedDoorW*0.14, 0, 0.075);
+  lockedDoorPivot.add(wrongSeamMesh);
+  // the actual door face - plain static wood, always visible
+  const lockedDoorMesh = new THREE.Mesh(new THREE.BoxGeometry(lockedDoorW, lockedDoorH, 0.08), doorMat);
   lockedDoorPivot.add(lockedDoorMesh);
-  for(const rot of [0.55, -0.55]){
-    const brace = new THREE.Mesh(new THREE.BoxGeometry(lockedDoorW*1.05, 0.1, 0.1), braceMat);
-    brace.position.set(0, 0, 0.05);
+  // doorknob, mounted on the leaf so it swings with the door once unlocked
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), knobMat);
+  knob.position.set(lockedDoorW/2 - 0.15, -(lockedDoorH*0.5 - 0.9), 0.07);
+  lockedDoorPivot.add(knob);
+  const knobPlate = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.02,8), knobMat);
+  knobPlate.rotation.x = Math.PI/2;
+  knobPlate.position.copy(knob.position); knobPlate.position.z -= 0.02;
+  lockedDoorPivot.add(knobPlate);
+  // recessed panel frame - two stacked rectangular outlines (top/bottom
+  // panel), the classic 2-panel door silhouette, sitting just proud of
+  // the slab face
+  const panelInset = 0.09, panelGapY = 0.14, panelStripW = 0.05;
+  function addPanelOutline(cyTop, cyBot){
+    const w = lockedDoorW - panelInset*2, h = cyTop - cyBot;
+    // four strips forming a rectangle border
+    const top = new THREE.Mesh(new THREE.BoxGeometry(w, panelStripW, 0.025), braceMat);
+    top.position.set(0, cyTop, 0.055);
+    lockedDoorPivot.add(top);
+    const bot = new THREE.Mesh(new THREE.BoxGeometry(w, panelStripW, 0.025), braceMat);
+    bot.position.set(0, cyBot, 0.055);
+    lockedDoorPivot.add(bot);
+    const left = new THREE.Mesh(new THREE.BoxGeometry(panelStripW, h, 0.025), braceMat);
+    left.position.set(-w/2, (cyTop+cyBot)/2, 0.055);
+    lockedDoorPivot.add(left);
+    const right = new THREE.Mesh(new THREE.BoxGeometry(panelStripW, h, 0.025), braceMat);
+    right.position.set(w/2, (cyTop+cyBot)/2, 0.055);
+    lockedDoorPivot.add(right);
+  }
+  const midY = 0, topPanelBot = panelGapY/2, botPanelTop = -panelGapY/2;
+  addPanelOutline(lockedDoorH/2 - panelInset, topPanelBot);
+  addPanelOutline(botPanelTop, -lockedDoorH/2 + panelInset);
+  // crossed boarding planks - thickened from a thin rod to an actual
+  // plank profile (wider + shallower) so they read as two distinct
+  // crossed boards from more viewing angles instead of collapsing into
+  // one line at grazing angles
+  for(const [rot, z] of [[0.55, 0.09], [-0.55, 0.105]]){
+    const brace = new THREE.Mesh(new THREE.BoxGeometry(lockedDoorW*1.08, 0.16, 0.05), braceMat);
+    brace.position.set(0, 0, z);
     brace.rotation.z = rot;
     lockedDoorPivot.add(brace);
+  }
+  // a couple of crude nail heads on the planks - small detail that sells
+  // "boarded shut" rather than "decorative X"
+  const nailMat = safehouseMat(0x3a3128, 0x0a0806);
+  for(const nx of [-lockedDoorW*0.32, lockedDoorW*0.32]){
+    for(const ny of [lockedDoorH*0.22, -lockedDoorH*0.22]){
+      const nail = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.03,6), nailMat);
+      nail.rotation.x = Math.PI/2;
+      nail.position.set(nx, ny, 0.095);
+      lockedDoorPivot.add(nail);
+    }
   }
   const lockedLintel = new THREE.Mesh(new THREE.BoxGeometry(lockedDoorW+0.14, SAFEHOUSE_WALL_H-lockedDoorH+0.06, 0.1), braceMat);
   lockedLintel.position.set(COL_W, SAFEHOUSE_WALL_H - (SAFEHOUSE_WALL_H-lockedDoorH)/2 + 0.02, WAKE_DOOR_Z);
