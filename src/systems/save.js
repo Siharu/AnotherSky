@@ -81,6 +81,8 @@ export function writeSave(indicatorLabel){
       relayActive: state.relayActive, relayLineShown: state.relayLineShown,
       returnCueShown: state.returnCueShown, doorUnlocked: state.doorUnlocked,
       enteredMap2: state.enteredMap2,
+      relayTowersConnected: [...state.relayTowersConnected],
+      hqTowerUnlocked: state.hqTowerUnlocked, tvStage: state.tvStage,
       ts: Date.now()
     }));
     flashAutosaveIndicator(indicatorLabel);
