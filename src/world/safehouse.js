@@ -58,8 +58,8 @@ const vignetteEl = document.getElementById('vignette');
 
    Local coordinate notes: +x is "east", +z is "north". */
 const SAFEHOUSE_WALL_H = 3.1, SAFEHOUSE_WALL_T = 0.3;
-const COL_W = -1.9, COL_E = 1.9;      // hallway's west/east walls
-const ROW_DIV = 0.0;                   // north rooms <-> south rooms
+export const COL_W = -1.9, COL_E = 1.9;      // hallway's west/east walls
+export const ROW_DIV = 0.0;                   // north rooms <-> south rooms
 
 const WAKE_DOOR_Z = 2.6, WAKE_DOOR_HALF = 0.7;      // wake-up room <-> hallway (sealed, quest-gated)
 const TV_DOOR_Z = 2.6, TV_DOOR_HALF = 0.85;          // TV room <-> hallway (open)
