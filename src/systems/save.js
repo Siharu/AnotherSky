@@ -22,6 +22,7 @@
 // homes: `restoreFromSave()`, `manualSave()`.
 import { $ } from '../utils/dom.js';
 import { state } from '../core/state.js';
+import { SAFEHOUSE_CENTER, SAFEHOUSE_HALF_W, SAFEHOUSE_HALF_D } from '../world/safehouse.js';
 import { flashAutosaveIndicator } from '../ui/hud.js';
 
 export const SAVE_KEY = 'anothersky_save_v1';
@@ -42,7 +43,7 @@ export const SAVE_KEY = 'anothersky_save_v1';
 // one. Don't skip versions - each step should only know about the one
 // version immediately before it, so the chain stays composable instead
 // of every step needing to know every past shape.
-export const CURRENT_SAVE_VERSION = 1;
+export const CURRENT_SAVE_VERSION = 2;
 
 export function migrateSave(save){
   let v = save.saveVersion || 0;
@@ -53,6 +54,24 @@ export function migrateSave(save){
   // point once a real v1->v2 step gets added later, instead of that
   // future step having to also account for "or no version at all".
   if(v === 0){ v = 1; }
+  // v1 -> v2: the safehouse interior was rebuilt from the old six-room
+  // layout into the NW/NE/SW/SE room grid (see world/safehouse.js's
+  // header comment) - completely different wall geometry at the same
+  // world-space footprint. A v1 save's playerX/playerZ was a valid
+  // standing position in the OLD rooms, but has no guarantee of being
+  // clear of a wall/door in the NEW grid (this is what "spawning inside
+  // the locked door" on Continue turned out to be - not a fresh-spawn
+  // bug, a stale-save-position bug). Rather than trying to guess which
+  // old coordinates happen to still be safe, just re-place any pre-
+  // rewrite save at the same safe wake-up-room point a fresh game
+  // starts at - matches main.js's own spawn formula exactly.
+  if(v === 1){
+    if(typeof save.playerX === 'number' && typeof save.playerZ === 'number'){
+      save.playerX = SAFEHOUSE_CENTER.x - (SAFEHOUSE_HALF_W - 4.0);
+      save.playerZ = SAFEHOUSE_CENTER.z + (SAFEHOUSE_HALF_D * 0.5);
+    }
+    v = 2;
+  }
   save.saveVersion = v;
   return save;
 }
