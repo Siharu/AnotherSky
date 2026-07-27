@@ -2009,25 +2009,31 @@ buildRelayCableNetwork();
 // system rather than a static prop once it lights up.
 function updateRelayCablePulse(){
   const pulse = 0.5 + Math.sin(performance.now()*0.0022)*0.5;
+  // Deliberately much dimmer than the tower beacons' own 0.4-1.0/0.5-1.0
+  // ranges (see updateConnectedRelayBeacons()/updateHQTowerBeacon()) -
+  // those numbers work on a small sphere, but a cable is a long surface
+  // smeared across the whole run to a tower, so the same intensity reads
+  // as a glaring line instead of a faint buried hum. These should be
+  // glimpsed, not lit up like a landing strip.
   for(const id of state.relayTowersConnected){
     const cable = deadRelayCables[id];
     if(!cable) continue;
     cable.mat.emissive.setHex(0xff3b3b);
-    cable.mat.emissiveIntensity = 0.4 + pulse*0.6;
-    if(cable.glow) cable.glow.material.opacity = 0.15 + pulse*0.2;
+    cable.mat.emissiveIntensity = 0.08 + pulse*0.12;
+    if(cable.glow) cable.glow.material.opacity = 0.05 + pulse*0.08;
   }
   if(hqTrunkCable){
     if(state.hqTowerUnlocked){
       hqTrunkCable.mat.emissive.setHex(0xff3b3b);
-      hqTrunkCable.mat.emissiveIntensity = 0.5 + pulse*0.7;
-      if(hqTrunkCable.glow) hqTrunkCable.glow.material.opacity = 0.2 + pulse*0.25;
+      hqTrunkCable.mat.emissiveIntensity = 0.12 + pulse*0.16;
+      if(hqTrunkCable.glow) hqTrunkCable.glow.material.opacity = 0.08 + pulse*0.1;
     } else if(state.relayTowersConnected.size > 0){
       // trunk stirs faintly once at least one relay feeds it, well
       // before the network's actually complete - a hint the line goes
       // somewhere before the player's confirmed where
       const partial = state.relayTowersConnected.size / (state.deadRelayTowers.length||8);
       hqTrunkCable.mat.emissive.setHex(0xcf8a2e);
-      hqTrunkCable.mat.emissiveIntensity = partial * 0.25 * (0.5+pulse*0.5);
+      hqTrunkCable.mat.emissiveIntensity = partial * 0.06 * (0.5+pulse*0.5);
     }
   }
 }
