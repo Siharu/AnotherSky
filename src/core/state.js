@@ -97,7 +97,16 @@ const state = {
   hqTowerUnlocked: false,        // true once all deadRelayTowers are connected - opens the path to the HQ tower
   nearTV: false,                 // safehouse TV/sticky-note interactable
   tvStage: 0,                    // 0 = not yet seen, 1 = sticky note read (relay plan), 2 = post-HQ "who are you" beat shown
-  swarmDeathTriggered: false     // one-shot: 4+ HUNTing ghuuls in close range ends the run
+  swarmDeathTriggered: false,    // one-shot: 4+ HUNTing ghuuls in close range ends the run
+  /* radio-room glitch door — deliberately NOT a new 12-item collectible
+     chain. It reuses the relay-tower quest already in systems/quests.js
+     ('connect-relays'/hqTowerUnlocked) as its unlock condition instead of
+     inventing a parallel memory-note counter that would just duplicate
+     state.collected/LORE.length. See world/safehouse.js buildSafehouse()
+     for the object itself. */
+  nearGlitchDoor: false,          // interact-range flag, same pattern as nearTV/nearCalendar
+  glitchDoorRevealed: false,      // true once the player has powered the radio console at least once (see updateRadioTower()) - flips the wall panel from inert clutter to a visible anomaly
+  glitchDoorUnlocked: false       // true once state.hqTowerUnlocked - door stops glitching, becomes openable
 };
 
 const EYE_HEIGHT = 1.65;
