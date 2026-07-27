@@ -71,6 +71,7 @@ const SAFEHOUSE_DOOR_YAW = -Math.PI/2; // forward=(-sin(yaw),-cos(yaw)) -> faces
 
 let safehouseLampPivot = null, safehouseDoorPivot = null, lockedDoorPivot = null;
 let interiorDoorPivots = []; // { pivot, x, z, radius, openAngle } - swing-open-on-approach interior doors
+let glitchDoorMesh = null, glitchDoorWhisper = null; // radio-room anomaly panel + its faint proximity hum
 
 const NOTEBOOK_POS = {
   // central hallway - always reachable, no quest gate, matches the
@@ -108,6 +109,16 @@ const TV_POS = {
 };
 const TV_YAW = Math.PI; // faces -Z (south), back into the TV room
 const CALENDAR_LAST_DAY = 23;
+const GLITCH_DOOR_POS = {
+  // radio/utility room, south wall, tucked behind the tool rack - stays
+  // inert clutter until the player powers the console once (see
+  // state.glitchDoorRevealed in updateSafehouseInterior), then reads as
+  // a seam in the wall rather than a prop. Unlock condition is
+  // state.hqTowerUnlocked - deliberately reusing the existing
+  // relay-tower chain instead of a second counter.
+  x: SAFEHOUSE_CENTER.x + (SAFEHOUSE_HALF_W - 2.6),
+  z: SAFEHOUSE_CENTER.z + (-SAFEHOUSE_HALF_D + 0.16),
+};
 
 function safehouseMat(color, emissive, map){
   const m = new THREE.MeshToonMaterial({
@@ -597,6 +608,38 @@ function buildSafehouse(){
     bedLamp.castShadow = true;
     bedLamp.shadow.mapSize.set(512, 512);
     group.add(bedLamp);
+
+    // environmental storytelling: a tally scratched into the headboard,
+    // counting days that stops well short of any round number - ties to
+    // lore #12/#19 ("The Fourth Year"/"Four Years, Give or Take") without
+    // needing the player to have found either page yet. Not interactable
+    // - it reads from a glance, the way a real headboard scratch would.
+    {
+      const tallyMat = safehouseMat(0x2a2418, 0x0e0c08);
+      for(let i=0;i<11;i++){
+        const mark = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.09, 0.01), tallyMat);
+        mark.position.set(cotX-cotW/2+0.18+i*0.045, cotLegH+0.09+0.3+0.45, cotZ-cotD/2+0.036);
+        mark.rotation.z = (Math.random()-0.5)*0.08;
+        group.add(mark);
+      }
+      // the twelfth stroke, crossed through diagonally - the count that
+      // never got finished
+      const strike = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.012, 0.01), tallyMat);
+      strike.position.set(cotX-cotW/2+0.18+5*0.045, cotLegH+0.09+0.3+0.45, cotZ-cotD/2+0.038);
+      strike.rotation.z = 0.6;
+      group.add(strike);
+    }
+    // face-down photograph on the bedside table, beside the drawer knob
+    // - deliberately face-down and non-interactable, same "unreadable on
+    // purpose" treatment as the radio room's ID badge; it's there to be
+    // noticed, not solved
+    {
+      const photoMat = safehouseMat(0x2c2822, 0x0c0a08);
+      const photo = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.006, 0.08), photoMat);
+      photo.position.set(BED_TABLE_POS.x-cx+0.12, 0.5+0.055+0.003, BED_TABLE_POS.z-cz-0.08);
+      photo.rotation.y = 0.5;
+      group.add(photo);
+    }
   }
 
   /* ---------- CENTRAL HALLWAY (spine) ----------
@@ -651,6 +694,37 @@ function buildSafehouse(){
     const vestLight = new THREE.PointLight(0xc9c2b0, 0.5, 10, 0);
     vestLight.position.set(MAIN_DOOR_X, 1.8, -SAFEHOUSE_HALF_D+2.2);
     group.add(vestLight);
+
+    // environmental storytelling: one coat on a row of hooks meant for
+    // more than one person - the hub is the room that most needs to
+    // feel like a former household, not just a corridor
+    {
+      const hookWallX = COL_W+0.03, hookZ = ROW_DIV-0.9;
+      const hookMat = safehouseMat(0x2c2824, 0x0e0c0a);
+      for(let i=0;i<3;i++){
+        const hook = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.06,6), hookMat);
+        hook.rotation.z = Math.PI/2;
+        hook.position.set(hookWallX+0.03, 1.6, hookZ+i*0.35);
+        group.add(hook);
+      }
+      const coatMat = safehouseMat(0x3c3428, 0x151007, fabricTex);
+      const coat = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.5, 0.34), coatMat);
+      coat.position.set(hookWallX+0.06, 1.32, hookZ);
+      group.add(coat);
+      // the other two hooks stay bare
+    }
+    // pencil height-marks on the hallway's own door frame near the wake-up
+    // room threshold - small, easy to miss, reads as "someone measured a
+    // child growing up in this house" without a single line of dialogue
+    {
+      const markMat = safehouseMat(0x241f18, 0x0a0806);
+      const frameX = COL_W-0.02, frameZ = WAKE_DOOR_Z+WAKE_DOOR_HALF+0.15;
+      for(const [my, mlen] of [[0.9,0.05],[1.05,0.06],[1.22,0.055],[1.35,0.05]]){
+        const tick = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.01, mlen), markMat);
+        tick.position.set(frameX, my, frameZ);
+        group.add(tick);
+      }
+    }
   }
 
   /* ---------- TV / CLUE ROOM (NE) ----------
@@ -765,7 +839,9 @@ function buildSafehouse(){
       spool.position.set(SAFEHOUSE_HALF_W-2.4+ox, 0.06, -SAFEHOUSE_HALF_D+2.0+oz);
       group.add(spool);
     }
-    // tool rack against the south wall
+    // tool rack against the south wall - GLITCH_DOOR_POS sits on the
+    // wall directly behind it, so the rack itself reads as the cover
+    // story ("just tools") until the panel behind it starts misbehaving
     {
       const rackX = SAFEHOUSE_HALF_W-2.6, rackZ = -SAFEHOUSE_HALF_D+0.35;
       const board = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.5, 0.04), woodMat);
@@ -777,13 +853,61 @@ function buildSafehouse(){
         group.add(tool);
       }
     }
-    // corkboard w/ pinned paperwork above the desk
+
+    // glitch door panel - GLITCH_DOOR_POS. Plain seam in the wall until
+    // state.glitchDoorRevealed (see updateSafehouseInterior), then
+    // chromatic-jitters the same way the wake-up room's locked door did
+    // pre-relayActive; calms and lightens once state.hqTowerUnlocked.
+    {
+      const gdX = GLITCH_DOOR_POS.x - cx, gdZ = GLITCH_DOOR_POS.z - cz;
+      const gdW = 0.9, gdH = 2.1;
+      const gdMat = safehouseMat(0x2c2925, 0x121110);
+      glitchDoorMesh = new THREE.Mesh(new THREE.BoxGeometry(gdW, gdH, 0.05), gdMat);
+      glitchDoorMesh.position.set(gdX, gdH/2, gdZ+0.03);
+      glitchDoorMesh.userData.baseColor = { h:0.05, s:0.1, l:0.08 };
+      group.add(glitchDoorMesh);
+      // a hairline seam outline - reads as "not quite part of the wall"
+      // even before it starts actively glitching
+      const seamMat = safehouseMat(0x0a0a0a, 0x000000);
+      for(const [w,h,ox,oy] of [[gdW+0.04,0.02,0,gdH/2],[gdW+0.04,0.02,0,-gdH/2],[0.02,gdH+0.04,gdW/2,0],[0.02,gdH+0.04,-gdW/2,0]]){
+        const seam = new THREE.Mesh(new THREE.BoxGeometry(w,h,0.01), seamMat);
+        seam.position.set(gdX+ox, gdH/2+oy, gdZ+0.058);
+        group.add(seam);
+      }
+    }
+
+    // corkboard w/ pinned paperwork above the desk - environmental
+    // storytelling: a hand-drawn relay map with towers crossed off one
+    // by one, and an operator ID badge clipped to the desk edge, tying
+    // the room to lore #13/#17 ("Relay Seven", "Address Book") without
+    // needing the player to have found those pages yet.
     {
       const corkMat2 = new THREE.MeshToonMaterial({ map:corkboardTex, color:0xffffff, gradientMap:toonRamp });
       patchFogToDistance(corkMat2);
       const boardCB = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.5), corkMat2);
       boardCB.position.set(deskX-0.3, 1.9, -SAFEHOUSE_HALF_D+SAFEHOUSE_WALL_T+0.02);
       group.add(boardCB);
+      const mapPaperMat = safehouseMat(0xc9bfa0, 0x3c3628);
+      const towerMap = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.32), mapPaperMat);
+      towerMap.position.set(deskX-0.3, 1.95, -SAFEHOUSE_HALF_D+SAFEHOUSE_WALL_T+0.035);
+      towerMap.rotation.z = 0.05;
+      group.add(towerMap);
+      // a few red string pins - hand-count of towers, one still unpinned
+      const stringMat = safehouseMat(0x6a1818, 0x1a0505);
+      for(const [sx,sy] of [[-0.14,0.08],[-0.02,0.03],[0.1,-0.02],[0.02,-0.09]]){
+        const pin = new THREE.Mesh(new THREE.SphereGeometry(0.008,6,6), stringMat);
+        pin.position.set(deskX-0.3+sx, 1.95+sy, -SAFEHOUSE_HALF_D+SAFEHOUSE_WALL_T+0.045);
+        group.add(pin);
+      }
+      // operator ID badge, clipped face-down on the desk edge - the
+      // player can't read who it belonged to without turning it over,
+      // which the interaction system doesn't currently support; left
+      // deliberately unreadable rather than half-implemented
+      const badgeMat = safehouseMat(0xb8b2a0, 0x2c2a24);
+      const badge = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.01, 0.09), badgeMat);
+      badge.position.set(deskX+0.45, deskLegH+deskTopH+0.006, deskZ-0.15);
+      badge.rotation.y = 0.4;
+      group.add(badge);
     }
 
     const radioDeskLight = new THREE.PointLight(0xd9c9b8, 0.55, 9, 0);
@@ -870,6 +994,32 @@ function buildSafehouse(){
     const storageLight = new THREE.PointLight(0xa89a80, 0.45, 8, 0);
     storageLight.position.set(stX, 1.8, stZ);
     group.add(storageLight);
+
+    // environmental storytelling: one crate stenciled with a relay
+    // designation (ties directly to lore #13 "Relay Seven" without
+    // requiring the page to have been found) and a folded operator
+    // jacket on top of it, left behind rather than packed
+    {
+      const stencilMat = safehouseMat(0x8a7a52, 0x2c2410);
+      const stencilBoxX = stX-0.5, stencilBoxZ = stZ-0.4;
+      for(let i=0;i<3;i++){
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.18-i*0.02, 0.03, 0.02), stencilMat);
+        bar.position.set(stencilBoxX, 0.52+i*0.001, stencilBoxZ+0.28+0.001);
+        bar.rotation.x = -Math.PI/2;
+        group.add(bar);
+      }
+      const jacketMat = safehouseMat(0x35342e, 0x121210, fabricTex);
+      const jacket = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.32), jacketMat);
+      jacket.position.set(stencilBoxX, 0.505, stencilBoxZ);
+      jacket.rotation.y = 0.15;
+      group.add(jacket);
+      // a WNCORE patch, barely visible, still stitched to the sleeve
+      const patchMat = safehouseMat(0x6a1818, 0x1a0505);
+      const patch = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.03), patchMat);
+      patch.rotation.x = -Math.PI/2;
+      patch.position.set(stencilBoxX-0.13, 0.532, stencilBoxZ+0.05);
+      group.add(patch);
+    }
   }
 
   // Fixed enclosed interior - affordable to fully traverse for shadow flags.
@@ -1031,6 +1181,37 @@ function updateSafehouseInterior(skyClock, dt){
     const target = near ? d.openAngle : 0;
     d.pivot.rotation.y += (target - d.pivot.rotation.y)*0.08;
   }
+
+  // glitch door (radio room) - reveal is a one-shot flip on first radio
+  // power-up, not its own quest step; unlock reuses the existing
+  // relay-tower chain (state.hqTowerUnlocked) rather than a parallel
+  // memory-note counter. See core/state.js for the flag comments.
+  if(!state.glitchDoorRevealed && state.radioOn){
+    state.glitchDoorRevealed = true;
+  }
+  if(state.glitchDoorRevealed && state.hqTowerUnlocked){
+    state.glitchDoorUnlocked = true;
+  }
+  if(glitchDoorMesh){
+    const gdx = state.playerX - GLITCH_DOOR_POS.x, gdz = state.playerZ - GLITCH_DOOR_POS.z;
+    state.nearGlitchDoor = (gdx*gdx + gdz*gdz) < 2.25;
+    if(!state.glitchDoorRevealed){
+      // inert - plain dark wall panel, no jitter, nothing to notice yet
+      glitchDoorMesh.material.color.setHSL(0.05, 0.1, 0.08);
+    } else if(!state.glitchDoorUnlocked){
+      const g = skyClock*11.0;
+      glitchDoorMesh.position.x = (GLITCH_DOOR_POS.x - SAFEHOUSE_CENTER.x) + (Math.random()-0.5)*0.015;
+      if(Math.random() < 0.02){
+        glitchDoorMesh.material.color.setHSL(Math.random(), 0.85, 0.5);
+      } else {
+        glitchDoorMesh.material.color.setHSL(0.6, 0.4, 0.1 + Math.sin(g)*0.02);
+      }
+    } else {
+      // stabilized - clean metal, glitch effect stops for good
+      glitchDoorMesh.position.x = (GLITCH_DOOR_POS.x - SAFEHOUSE_CENTER.x);
+      glitchDoorMesh.material.color.setHSL(0.58, 0.08, 0.55);
+    }
+  }
 }
 
 export {
@@ -1038,5 +1219,5 @@ export {
   updateDoorFlash, updateSafehouseInterior,
   NOTEBOOK_POS, LOCKED_DOOR_POS, BED_TABLE_POS, SAFEHOUSE_DOOR_YAW,
   CALENDAR_POS, STORAGE_DRAWER_POS, CALENDAR_LAST_DAY, TV_POS, TV_YAW,
-  EXTERIOR_CENTER,
+  GLITCH_DOOR_POS, EXTERIOR_CENTER,
 };
