@@ -1608,13 +1608,60 @@ let spireBeacon;
 }
 
 /* ---------- RADIO TOWER (landmark + minimap unlock) ----------
-   A single, unmissable structure planted dead center of the map: a tall
-   lattice mast with cross-braces, a blinking warning light on top, and a
-   PA-horn cluster partway up. Walking within range unlocks the minimap
-   permanently - the character getting their bearings for the first time
-   since waking up. */
+   A single, unmissable structure planted dead center of the map. Built
+   from real hex-lattice sections (alpha-cutout struts, not just torus
+   rings around bare legs) tapering through a lower platform, a dish
+   mount, and a narrowing mast - reads as an actual broadcast structure
+   from a distance instead of a generic 4-leg truss. Walking within
+   range unlocks the minimap permanently - the character getting their
+   bearings for the first time since waking up. */
 export const RADIO_TOWER_POS = { x:0, z:0 };
 const RADIO_TOWER_UNLOCK_RADIUS = 16;
+// Alpha-cutout lattice texture: solid strut border + X-bracing drawn onto
+// a canvas, then a noisy pixel overlay clipped to the drawn shape only
+// (source-atop) so the struts read as weathered painted steel instead of
+// a flat color. Cylinder sections built with this as an open-ended,
+// alphaTest-clipped map look like a real lattice tower from any angle
+// without modeling individual struts as geometry.
+function createTowerLatticeTexture(baseColorHex, rMod, gMod, bMod){
+  const size = 128, c = document.createElement('canvas'); c.width = size; c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = baseColorHex;
+  ctx.strokeStyle = baseColorHex;
+  const thickness = 14;
+  ctx.lineWidth = thickness;
+  ctx.fillRect(0, 0, size, thickness);
+  ctx.fillRect(0, size-thickness, size, thickness);
+  ctx.fillRect(0, 0, thickness, size);
+  ctx.fillRect(size-thickness, 0, thickness, size);
+  ctx.beginPath();
+  ctx.moveTo(0, 0); ctx.lineTo(size, size);
+  ctx.moveTo(size, 0); ctx.lineTo(0, size);
+  ctx.stroke();
+  ctx.globalCompositeOperation = 'source-atop';
+  for(let x=0;x<size;x+=2){
+    for(let y=0;y<size;y+=2){
+      const val = Math.floor(Math.random()*40)+40;
+      ctx.fillStyle = `rgb(${val+rMod},${val+gMod},${val+bMod})`;
+      ctx.fillRect(x, y, 2, 2);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+// Weathered, not painted-fresh: a dirty off-white and a faded rust-red
+// rather than the bright aviation white/red this style usually gets -
+// keeps it in the same worn-out palette as the rest of the map instead
+// of looking like a freshly-modeled reference render.
+const towerLatticeWhite = createTowerLatticeTexture('#8f8a80', 30, 28, 24);
+towerLatticeWhite.repeat.set(3, 3);
+const towerLatticeRust = createTowerLatticeTexture('#7a3324', 40, 8, -4);
+towerLatticeRust.repeat.set(3, 3);
 let radioTowerBeaconMesh, radioTowerHeight, radioTowerBeaconLight, radioTowerPulseRings;
 {
   const tx = RADIO_TOWER_POS.x, tz = RADIO_TOWER_POS.z;
@@ -1622,41 +1669,86 @@ let radioTowerBeaconMesh, radioTowerHeight, radioTowerBeaconLight, radioTowerPul
   const group = new THREE.Group();
   const steelMat = new THREE.MeshToonMaterial({ color:0x1c1c20, gradientMap:toonRamp });
   patchFogToDistance(steelMat);
+  const matLatWhite = new THREE.MeshToonMaterial({ map:towerLatticeWhite, gradientMap:toonRamp, alphaTest:0.5, side:THREE.DoubleSide });
+  patchFogToDistance(matLatWhite);
+  const matLatRust = new THREE.MeshToonMaterial({ map:towerLatticeRust, gradientMap:toonRamp, alphaTest:0.5, side:THREE.DoubleSide });
+  patchFogToDistance(matLatRust);
+  const matSolid = new THREE.MeshToonMaterial({ color:0x4a4640, gradientMap:toonRamp });
+  patchFogToDistance(matSolid);
 
   radioTowerHeight = 58;
-  const legRadius = 3.4;
-  const legGeo = new THREE.CylinderGeometry(0.22, 0.32, radioTowerHeight, 6);
-  // four corner legs, tapering inward slightly toward the top like a real mast
-  for(let i=0;i<4;i++){
-    const ang = (Math.PI/2)*i + Math.PI/4;
-    const leg = new THREE.Mesh(legGeo, steelMat);
-    leg.position.set(Math.cos(ang)*legRadius*0.5, radioTowerHeight/2, Math.sin(ang)*legRadius*0.5);
-    leg.rotation.z = Math.cos(ang)*0.05;
-    leg.rotation.x = -Math.sin(ang)*0.05;
-    group.add(leg);
+
+  // 1. Central shaft - a plain core the lattice sections wrap around,
+  // same idea as the reference build's cable/elevator shaft, gives the
+  // tower a solid spine instead of the lattice reading as hollow.
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.9, radioTowerHeight, 6), steelMat);
+  shaft.position.y = radioTowerHeight/2;
+  group.add(shaft);
+
+  // 2. Base lattice: wide rust-red skirt into a taller off-white body,
+  // hex cross-section (matches the game's other hex-ring towers) built
+  // as open-ended tapered cylinders so the alpha-cut lattice map reads
+  // through on every face.
+  const baseRust = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 9.5, 6, 6, 1, true), matLatRust);
+  baseRust.position.y = 3;
+  const baseWhite = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 6.5, 12, 6, 1, true), matLatWhite);
+  baseWhite.position.y = 12;
+  group.add(baseRust, baseWhite);
+
+  // 3. Lower platform: solid floor + waist-high lattice fence, something
+  // to actually stand on rather than empty rings - this is where a
+  // maintenance crew would have worked the relay.
+  const platSupport = new THREE.Mesh(new THREE.CylinderGeometry(5, 3.2, 3, 6, 1, true), matLatRust);
+  platSupport.position.y = 19.5;
+  const platFloor = new THREE.Mesh(new THREE.CylinderGeometry(5.2, 5.2, 0.5, 6), matSolid);
+  platFloor.position.y = 21.25;
+  const platFence = new THREE.Mesh(new THREE.CylinderGeometry(5.2, 5.2, 1.4, 6, 1, true), matLatRust);
+  platFence.position.y = 22.15;
+  group.add(platSupport, platFloor, platFence);
+
+  // 4. Dish + support arm, angled off the platform - a single fixture
+  // rather than the reference's three, so it stays a landmark silhouette
+  // instead of visual clutter this close to the player's spawn.
+  {
+    const dishGroup = new THREE.Group();
+    dishGroup.position.set(0, 24, 4.2);
+    dishGroup.rotation.y = Math.PI*0.15;
+    const dish = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 0.3, 0.7, 8), matSolid);
+    dish.rotation.x = Math.PI/2;
+    dishGroup.add(dish);
+    const receiver = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2, 4), steelMat);
+    receiver.rotation.x = Math.PI/2;
+    receiver.position.z = 0.7;
+    dishGroup.add(receiver);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 4.2), steelMat);
+    arm.position.z = -2.1;
+    dishGroup.add(arm);
+    group.add(dishGroup);
   }
-  // cross-brace rings at intervals - reads as a lattice tower from a distance
-  const ringCount = 9;
-  for(let i=0;i<ringCount;i++){
-    const t = i/(ringCount-1);
-    const y = t*radioTowerHeight;
-    const r = legRadius*0.5*(1-t*0.55) + 0.4;
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.05, 4, 8), steelMat);
-    ring.rotation.x = Math.PI/2;
-    ring.position.y = y;
-    group.add(ring);
-  }
-  // PA-horn cluster partway up - dark cones, part of the WNCORE relay dressing
-  const hornMat = new THREE.MeshToonMaterial({ color:0x0c0c0e, gradientMap:toonRamp });
-  patchFogToDistance(hornMat);
+
+  // 5. Upper taper: mid-body narrowing further, off-white into rust-red
+  // again so the alternating bands read as tiered from the ground.
+  const midWhite = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 3.2, 12, 6, 1, true), matLatWhite);
+  midWhite.position.y = 29;
+  const midRust = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 2.0, 10, 6, 1, true), matLatRust);
+  midRust.position.y = 40;
+  group.add(midWhite, midRust);
+
+  // small drum antennas ringing the mid taper
   for(let i=0;i<3;i++){
-    const ang = (Math.PI*2/3)*i;
-    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.3, 8), hornMat);
-    horn.position.set(Math.cos(ang)*1.6, radioTowerHeight*0.62, Math.sin(ang)*1.6);
-    horn.rotation.z = Math.PI/2;
-    horn.rotation.y = ang;
-    group.add(horn);
+    const ang = (i/3)*Math.PI*2;
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.3, 8), matSolid);
+    drum.rotation.x = Math.PI/2;
+    drum.position.set(Math.cos(ang)*2.1, 33, Math.sin(ang)*2.1);
+    drum.lookAt(0, 33, 0);
+    group.add(drum);
   }
+
+  // 6. Final narrow lattice run up to where the plain mast used to start
+  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.2, 10, 6, 1, true), matLatWhite);
+  upper.position.y = 50;
+  group.add(upper);
+
   // narrow mast above the lattice, topped with the beacon
   const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.2,10,6), steelMat);
   mast.position.y = radioTowerHeight + 5;
