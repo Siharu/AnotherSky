@@ -68,11 +68,11 @@ function addRelayDressing(group, w, h, d, doorX){
   const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.09,2.4,6), mastMat);
   mast.position.set(0, h+1.2, 0);
   group.add(mast);
-  const beaconMat = new THREE.MeshBasicMaterial({ color:0xff3b3b, transparent:true, opacity:0.6 });
+  const beaconMat = new THREE.MeshBasicMaterial({ color:0xff3b3b, transparent:true, opacity:0.7 });
   const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.16,8,8), beaconMat);
   beacon.position.set(0, h+2.5, 0);
   group.add(beacon);
-  const beaconLight = new THREE.PointLight(0xff3b3b, 0.55, 14, 2);
+  const beaconLight = new THREE.PointLight(0xff3b3b, 0.85, 16, 2);
   beaconLight.position.copy(beacon.position);
   group.add(beaconLight);
   relayBeacons.push(beacon);
@@ -89,9 +89,10 @@ function updateRelayBeacons(dt){
   if(!relayBeacons.length) return;
   relayBeaconPulse += dt;
   const p = 0.5 + Math.sin(relayBeaconPulse*1.4)*0.5;
-  // Dimmed/narrowed (was 0.4-0.95) - a faint dressing light on a
-  // background building, not a bright beacon competing with Relay Seven.
-  for(const b of relayBeacons) b.material.opacity = 0.3 + p*0.35;
+  // Dressing light on a background building, not a landmark - keeps a
+  // touch less glare than Relay Seven itself but stays visible enough to
+  // read as a working light from a distance.
+  for(const b of relayBeacons) b.material.opacity = 0.35 + p*0.4;
 }
 
 /* ---------- MODULAR FACADE GRID ---------- */
