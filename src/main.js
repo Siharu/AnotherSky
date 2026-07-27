@@ -127,23 +127,21 @@ import {
   updateDoorFlash, updateSafehouseInterior,
   NOTEBOOK_POS, LOCKED_DOOR_POS, BED_TABLE_POS, SAFEHOUSE_DOOR_YAW,
   CALENDAR_POS, STORAGE_DRAWER_POS, CALENDAR_LAST_DAY, TV_POS, GLITCH_DOOR_POS,
-  SAFEHOUSE_CENTER, SAFEHOUSE_HALF_W, SAFEHOUSE_HALF_D,
+  SAFEHOUSE_CENTER, SAFEHOUSE_HALF_W, SAFEHOUSE_HALF_D, HALLWAY_SPAWN_POS,
 } from './world/safehouse.js';
 import { updateDoorTransitions } from './systems/doors.js';
 
 // state.playerX/playerZ's default (-60,45) doubles as SAFEHOUSE_CENTER
 // (safehouse.js snapshots it at import time, before this line runs, so
-// changing it here only moves the player - not the building). That
-// default point is the hallway crossroads where all four room-grid
-// walls converge, not inside any room. The old six-room layout apparently
-// tolerated spawning there; the new NW/NE/SW/SE grid does not - the
-// player spawns clipped into/against the locked door's wall geometry
-// (COL_W, WAKE_DOOR_Z), which is what "spawns inside the locked door"
-// looks like. Moved into open floor in the actual wake-up room (NW
-// quadrant: x < COL_W, z > ROW_DIV), clear of both the bed (far NW
-// corner) and the door.
-state.playerX = SAFEHOUSE_CENTER.x - (SAFEHOUSE_HALF_W - 4.0);
-state.playerZ = SAFEHOUSE_CENTER.z + (SAFEHOUSE_HALF_D * 0.5);
+// changing it here only moves the player - not the building). The
+// wake-up room (NW quadrant, behind LOCKED_DOOR_POS) is sealed/quest-
+// gated, so spawning inside it - even on open floor clear of the bed
+// and door - reads as starting trapped in a locked room. Player now
+// spawns in the central hallway just outside that door instead
+// (HALLWAY_SPAWN_POS, see world/safehouse.js), which is always open and
+// is the actual hub the wake-up/TV/storage/radio rooms all connect to.
+state.playerX = HALLWAY_SPAWN_POS.x;
+state.playerZ = HALLWAY_SPAWN_POS.z;
 
 /* ============================================================
    ANOTHER SKY — atmospheric walking horror
@@ -1663,11 +1661,11 @@ let radioTowerBeaconMesh, radioTowerHeight, radioTowerBeaconLight, radioTowerPul
   const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.2,10,6), steelMat);
   mast.position.y = radioTowerHeight + 5;
   group.add(mast);
-  const beaconMat = new THREE.MeshBasicMaterial({ color:0xff3b3b, transparent:true, opacity:0.95 });
+  const beaconMat = new THREE.MeshBasicMaterial({ color:0xff3b3b, transparent:true, opacity:0.65 });
   radioTowerBeaconMesh = new THREE.Mesh(new THREE.SphereGeometry(0.55,10,10), beaconMat);
   radioTowerBeaconMesh.position.y = radioTowerHeight + 10.2;
   group.add(radioTowerBeaconMesh);
-  const beaconLight = new THREE.PointLight(0xff3b3b, 2.4, 46, 2);
+  const beaconLight = new THREE.PointLight(0xff3b3b, 1.1, 30, 2);
   beaconLight.position.y = radioTowerHeight + 10.2;
   group.add(beaconLight);
   radioTowerBeaconLight = beaconLight;
@@ -1885,9 +1883,12 @@ function updateConnectedRelayBeacons(){
   for(const id of state.relayTowersConnected){
     const d = deadRelayDressing[id];
     if(!d) continue;
-    d.beaconMesh.material.opacity = 0.5 + pulse*0.5;
-    d.beaconLight.intensity = 1.4 + pulse*1.8;
-    if(d.glow) d.glow.material.opacity = 0.3 + pulse*0.35;
+    // Dimmed to match the tower beacon's own toned-down PS2-era range
+    // (was opacity 0.5-1.0, light 1.4-3.2) - a faint pulse glimpsed
+    // through fog, not a bright landing light.
+    d.beaconMesh.material.opacity = 0.35 + pulse*0.3;
+    d.beaconLight.intensity = 0.6 + pulse*0.7;
+    if(d.glow) d.glow.material.opacity = 0.2 + pulse*0.2;
   }
 }
 /* ---------- HQ RELAY TOWER (10th, final) ----------
@@ -2019,14 +2020,14 @@ function updateRelayCablePulse(){
     const cable = deadRelayCables[id];
     if(!cable) continue;
     cable.mat.emissive.setHex(0xff3b3b);
-    cable.mat.emissiveIntensity = 0.08 + pulse*0.12;
-    if(cable.glow) cable.glow.material.opacity = 0.05 + pulse*0.08;
+    cable.mat.emissiveIntensity = 0.05 + pulse*0.08;
+    if(cable.glow) cable.glow.material.opacity = 0.03 + pulse*0.05;
   }
   if(hqTrunkCable){
     if(state.hqTowerUnlocked){
       hqTrunkCable.mat.emissive.setHex(0xff3b3b);
-      hqTrunkCable.mat.emissiveIntensity = 0.12 + pulse*0.16;
-      if(hqTrunkCable.glow) hqTrunkCable.glow.material.opacity = 0.08 + pulse*0.1;
+      hqTrunkCable.mat.emissiveIntensity = 0.08 + pulse*0.11;
+      if(hqTrunkCable.glow) hqTrunkCable.glow.material.opacity = 0.05 + pulse*0.07;
     } else if(state.relayTowersConnected.size > 0){
       // trunk stirs faintly once at least one relay feeds it, well
       // before the network's actually complete - a hint the line goes
@@ -2042,9 +2043,12 @@ function updateHQTowerBeacon(){
   // Slower, heavier pulse than Relay Seven's - reads as something much
   // larger breathing, not the same rhythm at a different scale.
   const pulse = 0.55 + Math.sin(performance.now()*0.0013)*0.45;
-  hqBeaconMesh.material.opacity = 0.5 + pulse*0.5;
-  if(hqBeaconMesh.userData.glow) hqBeaconMesh.userData.glow.material.opacity = 0.35 + pulse*0.4;
-  if(hqBeaconLight) hqBeaconLight.intensity = 2.6 + pulse*3.2;
+  // Dimmed (was opacity 0.5-1.0, light 2.6-5.8) - still the brightest of
+  // the beacons since the mast itself is much bigger, but nowhere near
+  // bright enough to feel like a modern glowing landmark.
+  hqBeaconMesh.material.opacity = 0.4 + pulse*0.35;
+  if(hqBeaconMesh.userData.glow) hqBeaconMesh.userData.glow.material.opacity = 0.25 + pulse*0.25;
+  if(hqBeaconLight) hqBeaconLight.intensity = 1.1 + pulse*1.3;
 }
 let hqBarrierLastLineAt = -999;
 function updateHQTowerBarrier(dt){
@@ -2071,14 +2075,17 @@ function updateHQTowerBarrier(dt){
 function updateRadioTowerBeacon(){
   if(!radioTowerBeaconMesh) return;
   const pulse = 0.55 + Math.sin(performance.now()*0.0022)*0.45;
-  radioTowerBeaconMesh.material.opacity = 0.5 + pulse*0.5;
-  if(radioTowerBeaconMesh.userData.glow) radioTowerBeaconMesh.userData.glow.material.opacity = 0.35 + pulse*0.4;
+  // Dimmed/narrowed ranges (was opacity 0.5-1.0, light 1.7-3.8) - PS2-era
+  // lighting reads as a small, weak point source glimpsed against dark
+  // fog, not a glowing landmark bright enough to light up the ground.
+  radioTowerBeaconMesh.material.opacity = 0.35 + pulse*0.3;
+  if(radioTowerBeaconMesh.userData.glow) radioTowerBeaconMesh.userData.glow.material.opacity = 0.2 + pulse*0.22;
   // Breathing light: the beacon's actual PointLight, separate from the
   // small glow sprite/mesh above - this is what bleeds red into the fog
   // and dome around the tower, not just brightens a sphere. Same pulse
   // phase as the mesh/glow so they read as one light source, not two
   // fighting rhythms.
-  if(radioTowerBeaconLight) radioTowerBeaconLight.intensity = 1.7 + pulse*2.1;
+  if(radioTowerBeaconLight) radioTowerBeaconLight.intensity = 0.7 + pulse*0.9;
 }
 export function updateRadioTower(dt){
   updateRadioTowerBeacon();
