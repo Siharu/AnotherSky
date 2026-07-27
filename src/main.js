@@ -1661,11 +1661,11 @@ let radioTowerBeaconMesh, radioTowerHeight, radioTowerBeaconLight, radioTowerPul
   const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.2,10,6), steelMat);
   mast.position.y = radioTowerHeight + 5;
   group.add(mast);
-  const beaconMat = new THREE.MeshBasicMaterial({ color:0xff3b3b, transparent:true, opacity:0.65 });
+  const beaconMat = new THREE.MeshBasicMaterial({ color:0xff3b3b, transparent:true, opacity:0.75 });
   radioTowerBeaconMesh = new THREE.Mesh(new THREE.SphereGeometry(0.55,10,10), beaconMat);
   radioTowerBeaconMesh.position.y = radioTowerHeight + 10.2;
   group.add(radioTowerBeaconMesh);
-  const beaconLight = new THREE.PointLight(0xff3b3b, 1.1, 30, 2);
+  const beaconLight = new THREE.PointLight(0xff3b3b, 1.8, 42, 2);
   beaconLight.position.y = radioTowerHeight + 10.2;
   group.add(beaconLight);
   radioTowerBeaconLight = beaconLight;
@@ -1716,6 +1716,7 @@ let radioTowerBeaconMesh, radioTowerHeight, radioTowerBeaconLight, radioTowerPul
    almost out rather than a live signal. */
 const DEAD_RELAY_COUNT = 8;
 const deadRelayFlickerLights = []; // { mesh, light, glow, phase, flickers }
+const deadRelaySparkLights = []; // { light, phase } - exposed-wire spark at each tower's broken leg
 const deadRelayCables = {}; // id -> { tube, mat, glow, pulsePhase } - see buildRelayCableNetwork()
 let hqTrunkCable = null; // { tube, mat, glow } - the final buried line from Relay Seven to HQ
 // dangling wire prop (session addition): a few sagging cable strands
@@ -1772,19 +1773,90 @@ function buildDeadRelayTower(x, z, flickers, id){
   for(let i=0;i<4;i++){
     const ang = (Math.PI/2)*i + Math.PI/4;
     if(i === brokenLegIndex){
-      const snapT = 0.4+Math.random()*0.25;
+      const snapT = 0.35+Math.random()*0.2;
       const stubH = towerHeight*snapT;
       const stub = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.3,stubH,6), steelMat);
       stub.position.set(Math.cos(ang)*legRadius*0.5, stubH/2, Math.sin(ang)*legRadius*0.5);
       stub.rotation.z = Math.cos(ang)*0.05 + tilt;
       stub.rotation.x = -Math.sin(ang)*0.05 + tilt;
       group.add(stub);
-      const brokenLen = towerHeight*(1-snapT)*0.8;
-      const broken = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.22,brokenLen,6), steelMat);
-      broken.position.set(Math.cos(ang)*legRadius*0.5+Math.cos(ang)*0.6, stubH+brokenLen*0.3, Math.sin(ang)*legRadius*0.5+Math.sin(ang)*0.6);
-      broken.rotation.z = Math.cos(ang)*0.05 + tilt + 0.7*(ang>Math.PI?1:-1);
-      broken.rotation.x = -Math.sin(ang)*0.05 + tilt;
+
+      // Jagged torn edge right at the snap - a small cluster of
+      // irregular dark shards instead of a clean cylinder cap, so the
+      // break itself reads as torn metal rather than the leg just
+      // stopping. (Previously the "broken" section was a second clean
+      // cylinder barely offset/rotated from the stub - close enough to
+      // look like one bent piece instead of two separated ones, which
+      // is what read as "deformed" rather than "broken".)
+      const hingeX = Math.cos(ang)*legRadius*0.5, hingeZ = Math.sin(ang)*legRadius*0.5;
+      const shardMat = new THREE.MeshToonMaterial({ color:0x14120d, gradientMap:toonRamp });
+      patchFogToDistance(shardMat);
+      for(let s=0;s<5;s++){
+        const sAng = Math.random()*Math.PI*2;
+        const shard = new THREE.Mesh(new THREE.ConeGeometry(0.04+Math.random()*0.05, 0.14+Math.random()*0.16, 4), shardMat);
+        shard.position.set(hingeX+Math.cos(sAng)*0.12, stubH+0.03+Math.random()*0.06, hingeZ+Math.sin(sAng)*0.12);
+        shard.rotation.z = (Math.random()-0.5)*1.4;
+        shard.rotation.x = (Math.random()-0.5)*1.4;
+        group.add(shard);
+      }
+
+      // The snapped-off section itself: falls away at its own
+      // independent angle (not mirrored off the leg's own position like
+      // before) and droops 55-95° off vertical - a real broken section
+      // hangs, it doesn't lean. A visible gap now separates it from the
+      // stub (see brokenTopY below), closed only by two thin bent
+      // tethers so it still reads as attached, not floating apart.
+      const brokenLen = towerHeight*(1-snapT)*0.85;
+      const fallAng = Math.random()*Math.PI*2;
+      const fallTilt = Math.PI*0.3 + Math.random()*Math.PI*0.22;
+      const brokenTopY = stubH + 0.4;
+      const broken = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.23,brokenLen,6), steelMat);
+      broken.position.set(
+        hingeX + Math.cos(fallAng)*brokenLen*0.5*Math.sin(fallTilt),
+        brokenTopY - brokenLen*0.5*Math.cos(fallTilt),
+        hingeZ + Math.sin(fallAng)*brokenLen*0.5*Math.sin(fallTilt)
+      );
+      broken.rotation.x = Math.sin(fallAng)*fallTilt;
+      broken.rotation.z = -Math.cos(fallAng)*fallTilt;
       group.add(broken);
+
+      // Two thin bent tethers bridging the gap - the only thing still
+      // holding the section up, so it reads as dangling, not levitating.
+      const brokenBotEnd = new THREE.Vector3(
+        hingeX + Math.cos(fallAng)*brokenLen*Math.sin(fallTilt),
+        brokenTopY - brokenLen*Math.cos(fallTilt),
+        hingeZ + Math.sin(fallAng)*brokenLen*Math.sin(fallTilt)
+      );
+      for(let t2=0;t2<2;t2++){
+        const jitter = (t2-0.5)*0.1;
+        const tetherCurve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(hingeX+jitter, brokenTopY, hingeZ+jitter),
+          new THREE.Vector3((hingeX+brokenBotEnd.x)/2+jitter, brokenTopY-0.35, (hingeZ+brokenBotEnd.z)/2+jitter),
+          brokenBotEnd.clone(),
+        ]);
+        const tetherGeo = new THREE.TubeGeometry(tetherCurve, 6, 0.018, 4, false);
+        group.add(new THREE.Mesh(tetherGeo, shardMat));
+      }
+
+      // A few fallen shards scattered on the ground under the break -
+      // sells "something fell off this" from a distance, no physics
+      // needed.
+      for(let dbi=0;dbi<3;dbi++){
+        const deb = new THREE.Mesh(new THREE.BoxGeometry(0.1+Math.random()*0.1, 0.035, 0.05+Math.random()*0.08), shardMat);
+        deb.position.set(hingeX+(Math.random()-0.5)*1.3, 0.03, hingeZ+(Math.random()-0.5)*1.3);
+        deb.rotation.y = Math.random()*Math.PI*2;
+        group.add(deb);
+      }
+
+      // Exposed sparking wire right at the break - a tiny, fast,
+      // irregular flicker distinct from the beacon flicker higher up,
+      // the visual tell that this used to be live. Driven by
+      // updateDeadRelaySparks() alongside updateDeadRelayFlickers().
+      const sparkLight = new THREE.PointLight(0xffb84a, 0, 5, 2);
+      sparkLight.position.set(hingeX, brokenTopY, hingeZ);
+      group.add(sparkLight);
+      deadRelaySparkLights.push({ light: sparkLight, phase: Math.random()*100 });
+
       continue;
     }
     const leg = new THREE.Mesh(legGeo, steelMat);
@@ -1862,6 +1934,17 @@ function updateDeadRelayFlickers(dt){
     f.glow.material.opacity = on * 0.5;
   }
 }
+function updateDeadRelaySparks(dt){
+  for(const s of deadRelaySparkLights){
+    s.phase += dt;
+    // Much faster/spikier than the beacon flicker above - a short-lived
+    // arc, not a breathing light. Mostly off, with brief sharp flashes;
+    // a hard cutoff on a fast sine keeps the "on" windows short.
+    const raw = Math.sin(s.phase*9.3) * Math.sin(s.phase*2.1 + 0.7) - 0.82;
+    const on = Math.max(0, raw) * 3.4; // spikes past 1 briefly, sells "arc" over "glow"
+    s.light.intensity = Math.min(on, 1.6);
+  }
+}
 // session addition: visual half of connectDeadRelay(id) - wires come
 // down, the amber dying-light treatment swaps for a steady breathing
 // red beacon (same visual language as Relay Seven, so the player reads
@@ -1883,12 +1966,12 @@ function updateConnectedRelayBeacons(){
   for(const id of state.relayTowersConnected){
     const d = deadRelayDressing[id];
     if(!d) continue;
-    // Dimmed to match the tower beacon's own toned-down PS2-era range
-    // (was opacity 0.5-1.0, light 1.4-3.2) - a faint pulse glimpsed
-    // through fog, not a bright landing light.
-    d.beaconMesh.material.opacity = 0.35 + pulse*0.3;
-    d.beaconLight.intensity = 0.6 + pulse*0.7;
-    if(d.glow) d.glow.material.opacity = 0.2 + pulse*0.2;
+    // Same split as the main tower's own beacon: light throw stays close
+    // to original (keeps the immediate area lit), only the bulb/glow
+    // sprite's visible glare is toned down.
+    d.beaconMesh.material.opacity = 0.4 + pulse*0.35;
+    d.beaconLight.intensity = 1.2 + pulse*1.5;
+    if(d.glow) d.glow.material.opacity = 0.18 + pulse*0.2;
   }
 }
 /* ---------- HQ RELAY TOWER (10th, final) ----------
@@ -2020,14 +2103,14 @@ function updateRelayCablePulse(){
     const cable = deadRelayCables[id];
     if(!cable) continue;
     cable.mat.emissive.setHex(0xff3b3b);
-    cable.mat.emissiveIntensity = 0.05 + pulse*0.08;
-    if(cable.glow) cable.glow.material.opacity = 0.03 + pulse*0.05;
+    cable.mat.emissiveIntensity = 0.07 + pulse*0.1;
+    if(cable.glow) cable.glow.material.opacity = 0.04 + pulse*0.07;
   }
   if(hqTrunkCable){
     if(state.hqTowerUnlocked){
       hqTrunkCable.mat.emissive.setHex(0xff3b3b);
-      hqTrunkCable.mat.emissiveIntensity = 0.08 + pulse*0.11;
-      if(hqTrunkCable.glow) hqTrunkCable.glow.material.opacity = 0.05 + pulse*0.07;
+      hqTrunkCable.mat.emissiveIntensity = 0.1 + pulse*0.14;
+      if(hqTrunkCable.glow) hqTrunkCable.glow.material.opacity = 0.07 + pulse*0.09;
     } else if(state.relayTowersConnected.size > 0){
       // trunk stirs faintly once at least one relay feeds it, well
       // before the network's actually complete - a hint the line goes
@@ -2043,12 +2126,12 @@ function updateHQTowerBeacon(){
   // Slower, heavier pulse than Relay Seven's - reads as something much
   // larger breathing, not the same rhythm at a different scale.
   const pulse = 0.55 + Math.sin(performance.now()*0.0013)*0.45;
-  // Dimmed (was opacity 0.5-1.0, light 2.6-5.8) - still the brightest of
-  // the beacons since the mast itself is much bigger, but nowhere near
-  // bright enough to feel like a modern glowing landmark.
-  hqBeaconMesh.material.opacity = 0.4 + pulse*0.35;
-  if(hqBeaconMesh.userData.glow) hqBeaconMesh.userData.glow.material.opacity = 0.25 + pulse*0.25;
-  if(hqBeaconLight) hqBeaconLight.intensity = 1.1 + pulse*1.3;
+  // Same split as the other beacons - light throw stays close to
+  // original (this mast is much bigger, so it's still the strongest of
+  // the three), only the glare is toned down.
+  hqBeaconMesh.material.opacity = 0.45 + pulse*0.35;
+  if(hqBeaconMesh.userData.glow) hqBeaconMesh.userData.glow.material.opacity = 0.22 + pulse*0.25;
+  if(hqBeaconLight) hqBeaconLight.intensity = 2.1 + pulse*2.6;
 }
 let hqBarrierLastLineAt = -999;
 function updateHQTowerBarrier(dt){
@@ -2075,21 +2158,26 @@ function updateHQTowerBarrier(dt){
 function updateRadioTowerBeacon(){
   if(!radioTowerBeaconMesh) return;
   const pulse = 0.55 + Math.sin(performance.now()*0.0022)*0.45;
-  // Dimmed/narrowed ranges (was opacity 0.5-1.0, light 1.7-3.8) - PS2-era
-  // lighting reads as a small, weak point source glimpsed against dark
-  // fog, not a glowing landmark bright enough to light up the ground.
-  radioTowerBeaconMesh.material.opacity = 0.35 + pulse*0.3;
-  if(radioTowerBeaconMesh.userData.glow) radioTowerBeaconMesh.userData.glow.material.opacity = 0.2 + pulse*0.22;
+  // Split two things that used to move together: how far the light
+  // actually THROWS into the world (PointLight intensity - this is what
+  // was making the whole area near the tower go dark when cut) vs how
+  // GLARING the bulb/glow sprite itself looks up close (opacity - this
+  // is the part that read as "too bright" and needed dimming). Light
+  // throw stays close to its original range; only the visible glare is
+  // toned down.
+  radioTowerBeaconMesh.material.opacity = 0.4 + pulse*0.35;
+  if(radioTowerBeaconMesh.userData.glow) radioTowerBeaconMesh.userData.glow.material.opacity = 0.18 + pulse*0.22;
   // Breathing light: the beacon's actual PointLight, separate from the
   // small glow sprite/mesh above - this is what bleeds red into the fog
   // and dome around the tower, not just brightens a sphere. Same pulse
   // phase as the mesh/glow so they read as one light source, not two
   // fighting rhythms.
-  if(radioTowerBeaconLight) radioTowerBeaconLight.intensity = 0.7 + pulse*0.9;
+  if(radioTowerBeaconLight) radioTowerBeaconLight.intensity = 1.5 + pulse*1.8;
 }
 export function updateRadioTower(dt){
   updateRadioTowerBeacon();
   updateDeadRelayFlickers(dt);
+  updateDeadRelaySparks(dt);
   updateConnectedRelayBeacons();
   updateRelayCablePulse();
   updateHQTowerBarrier(dt);
@@ -4343,6 +4431,21 @@ function updateSky(dt){
   // become an unmistakable pulsing web as dread climbs
   cloudMat.uniforms.uDread.value = state.dread;
   cloudMat2.uniforms.uDread.value = state.dread;
+  // World lighting reacting to weather/event state, not a flat global
+  // dim - thick cloud cover blocks the moon and darkens the baseline a
+  // little, but rising dread/wrongness bleeds its own dim red glow back
+  // in on top, so a high-dread moment doesn't just go dark, it goes dark
+  // AND wrong. cloudMat's own uOpacity (set just above) already reads as
+  // "how dense the cloud deck looks right now", reused here rather than
+  // tracking a second density value.
+  {
+    const cloudDensity = cloudMat.uniforms.uOpacity.value; // ~0.25-1.0
+    const cloudDim = THREE.MathUtils.mapLinear(THREE.MathUtils.clamp(cloudDensity,0.25,1.0), 0.25, 1.0, 1.0, 0.72);
+    ambient.intensity = THREE.MathUtils.clamp(0.4*cloudDim + state.dread*0.1, 0.24, 0.5);
+    ambient.color.setHSL(THREE.MathUtils.lerp(0.78, 0.02, state.skyWrongness), 0.4, 0.26);
+    skyLight.intensity = THREE.MathUtils.clamp(0.28*cloudDim + state.dread*0.07, 0.17, 0.34);
+    moonLight.intensity = THREE.MathUtils.clamp(0.9*cloudDim - state.skyWrongness*0.15, 0.4, 0.9);
+  }
   // Used to ramp in on its own delay/duration relative to skyEventClock,
   // separate from skyWrongness itself - a leftover from when the curdle
   // was a single timed event. Now it's just a function of the current
