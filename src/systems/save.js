@@ -22,7 +22,7 @@
 // homes: `restoreFromSave()`, `manualSave()`.
 import { $ } from '../utils/dom.js';
 import { state } from '../core/state.js';
-import { SAFEHOUSE_CENTER, SAFEHOUSE_HALF_W, SAFEHOUSE_HALF_D } from '../world/safehouse.js';
+import { HALLWAY_SPAWN_POS } from '../world/safehouse.js';
 import { flashAutosaveIndicator } from '../ui/hud.js';
 
 export const SAVE_KEY = 'anothersky_save_v1';
@@ -63,12 +63,13 @@ export function migrateSave(save){
   // the locked door" on Continue turned out to be - not a fresh-spawn
   // bug, a stale-save-position bug). Rather than trying to guess which
   // old coordinates happen to still be safe, just re-place any pre-
-  // rewrite save at the same safe wake-up-room point a fresh game
-  // starts at - matches main.js's own spawn formula exactly.
+  // rewrite save at the same safe hallway point a fresh game starts at -
+  // matches main.js's own spawn (HALLWAY_SPAWN_POS), outside the sealed
+  // wake-up room rather than inside it.
   if(v === 1){
     if(typeof save.playerX === 'number' && typeof save.playerZ === 'number'){
-      save.playerX = SAFEHOUSE_CENTER.x - (SAFEHOUSE_HALF_W - 4.0);
-      save.playerZ = SAFEHOUSE_CENTER.z + (SAFEHOUSE_HALF_D * 0.5);
+      save.playerX = HALLWAY_SPAWN_POS.x;
+      save.playerZ = HALLWAY_SPAWN_POS.z;
     }
     v = 2;
   }
