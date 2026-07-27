@@ -112,6 +112,21 @@ const QUESTS = [
     },
   },
   {
+    id: 'glitch-door',
+    name(){ return 'there\'s a door in the radio room that isn\'t supposed to be there'; },
+    have(state){ return !!state.glitchDoorUnlocked; },
+    label(state){
+      if(state.glitchDoorUnlocked) return 'open';
+      if(state.glitchDoorRevealed) return 'sealed';
+      return 'not yet';
+    },
+    thought(state){
+      if(state.glitchDoorUnlocked) return "it stopped flickering the second the last mast lit. i don't think that's a coincidence.";
+      if(state.glitchDoorRevealed) return "the wall behind the desk isn't finished being a wall. i can hear it deciding.";
+      return "i haven't turned the radio on yet. some part of me is glad.";
+    },
+  },
+  {
     id: 'leave-downtown',
     name(){ return 'that light isn\'t yours to walk toward — the road out is'; },
     have(state){ return !!state.enteredMap2; },
