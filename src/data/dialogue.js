@@ -231,6 +231,14 @@ export const tvRoomDescriptionLines = [
 export const tvStickyNoteLine = "...sticky note, taped to the frame. \"reconnect all relay towers - link went down after REDACTED.\" the rest of that word's scratched out, hard enough to tear the paper.";
 export const tvStickyNoteFollowupLine = "all of them. not just the one on the ridge. there's more of these things standing out there.";
 
+// ---------- GLITCH DOOR (radio room) ----------
+// First-inspect (glitchDoorRevealed, pre-unlock), a re-inspect while
+// still sealed, and the one-shot line that plays the moment the last
+// dead relay lights up and the panel stabilizes.
+export const glitchDoorFirstLine = "there's a seam in the wall behind the rack that isn't grout or plaster. it's colder than the rest of the wall, and it isn't the same shape twice.";
+export const glitchDoorSealedLine = "still there. still wrong. i put my hand on it once. i'm not doing that again.";
+export const glitchDoorUnlockLine = "the last light came on somewhere out on the ridge, and the wall just... stopped arguing with itself. it's a door now. it wasn't a door a minute ago.";
+
 // ---------- RELAY TOWER CONNECTION QUEST ----------
 // One flavor line per dead relay a player connects their radio to
 // (main.js's connectDeadRelay()) - not numbered 1:1 to a specific
