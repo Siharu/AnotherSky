@@ -1,34 +1,28 @@
 /* ============================================================
    render/colorGrade.js — the "Cinematic Filter" full-screen
-   color-grade pass. This file was imported by main.js (17,
-   3625, 3705) and systems/settings.js (33, 97) but never
-   actually existed on disk - same class of bug postprocessing.js
-   hit before it (see that file's header comment): a browser's ES
-   module loader rejects an import of a name the target module
-   doesn't export, so the whole game failed to boot
-   (`GET .../render/colorGrade.js 404`) rather than failing loudly
-   about a missing export. Filling it in now.
+   color-grade pass. See git history / chat log for the original
+   incident (file didn't exist, then a per-pixel HSV grade shader
+   that was correct but slow).
 
-   No EffectComposer/RenderPass/ShaderPass here - index.html only
-   loads core three.js r128 (see its <script> tags), no addons -
-   so this hand-rolls the same shape: render the scene to an
-   offscreen target, then draw a full-screen textured quad with a
-   grading ShaderMaterial through its own ortho camera. When the
-   filter is off, renderWithColorGrade() just does the plain
-   renderer.render(scene, camera) - this module is main.js's ONLY
-   render call site either way (grep confirms no other
-   renderer.render anywhere), so both paths live here.
+   Rewritten to a LUT-based grade, the same technique engines like
+   Unreal (Wuthering Waves, Endfield) use for this: bake the desired
+   look into a lookup texture ONCE, then the per-frame cost is a
+   texture sample + mix instead of a contrast curve + full RGB<->HSV
+   round trip + a 4-tap blur, all recomputed 60x/sec per pixel. The
+   look itself - the gold/black duotone read (dark, near-monochrome
+   base with warm highlights staying in color) - is authored into
+   bakeLUT() below, once, in plain JS math where cost doesn't matter,
+   not in the fragment shader where it did.
+
+   Still no EffectComposer/addons (index.html only loads core three.js
+   r128) - still a hand-rolled offscreen-target + full-screen-quad
+   pass, same shape as before. The expensive part was always the
+   fragment shader's math, not the two-pass structure, so this keeps
+   that structure and just guts what runs per-pixel.
    ============================================================ */
 
 import { renderer, scene, camera } from '../core/scene.js';
 
-// Deliberately NOT importing settingsResScale from systems/settings.js
-// here - that module imports setColorGradeEnabled FROM this file, so
-// importing back would be a live circular import between the two.
-// renderer.getDrawingBufferSize() reads the actual current backbuffer
-// (renderer.setPixelRatio/.setSize, applied by settings.js's own
-// applyResolution()) without this file needing to know why that size
-// is what it is.
 const _bufSize = new THREE.Vector2();
 
 let enabled = true;
@@ -41,37 +35,118 @@ let rt = new THREE.WebGLRenderTarget(
   { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat }
 );
 
-/* ---------- full-screen quad + its own ortho camera, same
-   pattern EffectComposer uses internally - kept manual here since
-   no addon script is loaded ---------- */
 const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 const quadScene = new THREE.Scene();
 
-/* Light panel + color-mixer + effects values as specified:
-     Contrast +20..+35, Highlights -15, Shadows -20, Blacks -10
-     Orange/red/yellow: sat +15, hue nudged toward orange (the
-       "gold" look)
-     Green/aqua/blue/purple: sat -100 (deletes background noise,
-       leaves the warm channel as the only thing reading as color)
-     Clarity +15, Vignette -20 (darkens edges)
-   Lightroom's panel scale is roughly -100..+100 per slider around
-   a neutral point; converted below to the multiplicative/additive
-   uniforms this shader actually consumes. */
+/* ---------- LUT bake: gold/black duotone look ----------
+   Runs once, at module load, in plain JS - this is where all the
+   "expensive" grading math from the old shader now lives, since
+   here it costs nothing (LUT_SIZE^3 texels, computed once, not
+   LUT_SIZE^3 * screen-pixels * 60fps).
+
+   The look: crush toward a near-black base, then lerp that base
+   toward a warm gold based on luminance (a duotone gradient, not a
+   flat tint) - this IS the "gold and black filter" read. Pixels
+   that are already warm in hue (fire, lamps, skin) get blended back
+   toward their real color instead of the duotone, the same way a
+   film emulation keeps practical light sources reading as light
+   sources rather than flattening everything to two colors. Cool/
+   neutral pixels (sky, fog, foliage) go almost fully duotone -
+   that's what deletes the background color noise and makes the
+   warm highlights the only thing that reads as "color" on screen. */
+const LUT_SIZE = 16; // perfect square (4x4 tile grid) - see sampleLut3D's assumption below
+const GOLD = [1.0, 0.78, 0.42];   // highlight duotone color
+const BLACK_TINT = [0.03, 0.02, 0.015]; // shadow duotone color - not pure 0, keeps blacks from looking dead/crushed
+const CONTRAST = 1.22;
+const PIVOT = 0.16; // this game's baseline luminance runs dark - see prior tuning notes in chat history
+const DUOTONE_GAMMA = 0.85; // <1 biases the gold up into the midtones sooner, not just the brightest highlights
+
+function luminance(r, g, b){ return r*0.2126 + g*0.7152 + b*0.0722; }
+
+function rgb2hsv(r, g, b){
+  const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max-min;
+  let h = 0;
+  if(d !== 0){
+    if(max===r) h = ((g-b)/d) % 6;
+    else if(max===g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h /= 6; if(h<0) h += 1;
+  }
+  return [h, max===0?0:d/max, max];
+}
+
+function smoothstep(edge0, edge1, x){
+  const t = Math.max(0, Math.min(1, (x-edge0)/(edge1-edge0)));
+  return t*t*(3-2*t);
+}
+
+function bakeLUT(){
+  const dim = Math.sqrt(LUT_SIZE); // tile grid columns/rows (4 for LUT_SIZE 16)
+  const texSize = dim * LUT_SIZE;
+  const data = new Uint8Array(texSize * texSize * 4);
+
+  for(let bz=0; bz<LUT_SIZE; bz++){
+    const tileCol = bz % dim, tileRow = Math.floor(bz/dim);
+    for(let gy=0; gy<LUT_SIZE; gy++){
+      for(let rx=0; rx<LUT_SIZE; rx++){
+        let r = rx/(LUT_SIZE-1), g = gy/(LUT_SIZE-1), b = bz/(LUT_SIZE-1);
+
+        // pivot-based contrast (same reasoning as the old shader's
+        // uPivot - this scene's dark baseline, not photo mid-grey)
+        const contrasted = v => (v - PIVOT) * CONTRAST + PIVOT;
+        r = Math.max(0, contrasted(r));
+        g = Math.max(0, contrasted(g));
+        b = Math.max(0, contrasted(b));
+
+        const lum = Math.min(1, luminance(r,g,b));
+        const duoT = Math.pow(lum, DUOTONE_GAMMA);
+        const duo = [
+          BLACK_TINT[0] + (GOLD[0]-BLACK_TINT[0])*duoT,
+          BLACK_TINT[1] + (GOLD[1]-BLACK_TINT[1])*duoT,
+          BLACK_TINT[2] + (GOLD[2]-BLACK_TINT[2])*duoT,
+        ];
+
+        // warm-hued source pixels keep more of their real color
+        // instead of going full duotone - lamps/fire/skin read as
+        // themselves, everything else (sky, fog, foliage) reads as
+        // the gold/black gradient.
+        const [hue, sat] = rgb2hsv(r,g,b);
+        const warmWeight = sat * (1.0 - smoothstep(0.10, 0.22, Math.min(hue, 1-hue)));
+
+        let outR = duo[0] + (r-duo[0])*warmWeight;
+        let outG = duo[1] + (g-duo[1])*warmWeight;
+        let outB = duo[2] + (b-duo[2])*warmWeight;
+        outR = Math.max(0, Math.min(1, outR));
+        outG = Math.max(0, Math.min(1, outG));
+        outB = Math.max(0, Math.min(1, outB));
+
+        const px = tileCol*LUT_SIZE + rx, py = tileRow*LUT_SIZE + gy;
+        const idx = (py*texSize + px) * 4;
+        data[idx+0] = Math.round(outR*255);
+        data[idx+1] = Math.round(outG*255);
+        data[idx+2] = Math.round(outB*255);
+        data[idx+3] = 255;
+      }
+    }
+  }
+  return { data, texSize };
+}
+
+const { data: lutData, texSize: LUT_TEX_SIZE } = bakeLUT();
+const lutTexture = new THREE.DataTexture(lutData, LUT_TEX_SIZE, LUT_TEX_SIZE, THREE.RGBAFormat);
+lutTexture.minFilter = THREE.LinearFilter;
+lutTexture.magFilter = THREE.LinearFilter;
+lutTexture.wrapS = THREE.ClampToEdgeWrapping;
+lutTexture.wrapT = THREE.ClampToEdgeWrapping;
+lutTexture.generateMipmaps = false;
+lutTexture.needsUpdate = true;
+
 const gradeMaterial = new THREE.ShaderMaterial({
   uniforms: {
     tDiffuse: { value: null },
-    uResolution: { value: new THREE.Vector2(1, 1) },
-    uContrast: { value: 1.28 },      // +28 on the 0..100 slider scale
-    uHighlights: { value: 0.90 },    // -15, softened - see uPivot note below
-    uShadows: { value: 0.92 },       // -20, softened - same reason
-    uBlackPoint: { value: 0.03 },    // -10, softened - see uPivot note below
-    uPivot: { value: 0.16 },         // contrast/shadow-highlight pivot point
-    uSaturation: { value: 1.0 },     // global saturation left neutral - the color-mixer split below does the real work
-    uWarmBoost: { value: 1.15 },     // +15 saturation on red/orange/yellow
-    uWarmHueShift: { value: 0.03 },  // slight hue nudge toward orange for the warm channel
-    uCoolKill: { value: 0.0 },       // -100 saturation on green/aqua/blue/purple - 0.0 = fully desaturated
-    uClarity: { value: 0.15 },       // +15
-    uVignette: { value: 0.20 },      // -20, edges darkened
+    tLut: { value: lutTexture },
+    uLutSize: { value: LUT_SIZE },
+    uVignette: { value: 0.20 },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -82,101 +157,40 @@ const gradeMaterial = new THREE.ShaderMaterial({
   `,
   fragmentShader: `
     uniform sampler2D tDiffuse;
-    uniform vec2 uResolution;
-    uniform float uContrast;
-    uniform float uHighlights;
-    uniform float uShadows;
-    uniform float uBlackPoint;
-    uniform float uPivot;
-    uniform float uSaturation;
-    uniform float uWarmBoost;
-    uniform float uWarmHueShift;
-    uniform float uCoolKill;
-    uniform float uClarity;
+    uniform sampler2D tLut;
+    uniform float uLutSize;
     uniform float uVignette;
     varying vec2 vUv;
 
-    vec3 gradeCurve(vec3 c){
-      // black point: crush near-zero values instead of just
-      // multiplying, so the game's already-heavy fog/dark scenes
-      // don't wash out to grey. Softened from the original -10
-      // spec (uBlackPoint 0.03, not 0.10) - a photo-grade black
-      // crush assumes normal exposure; this game's baseline
-      // luminance already sits well below a typical photo's, so
-      // the full -10 crush was clipping most on-screen pixels to
-      // literal 0 (reported as "everything is black").
-      c = max(c - uBlackPoint, 0.0) / max(1.0 - uBlackPoint, 0.0001);
-      // Contrast/shadows/highlights all pivot on uPivot rather
-      // than photo-normal mid-grey (0.5) - this scene's average
-      // luminance runs close to uPivot (~0.16), not 0.5, so a
-      // 0.5-pivoted contrast stretch was pushing nearly every
-      // pixel below the pivot into negative territory, i.e.
-      // clamped to black. Pivoting at the scene's actual dark
-      // baseline keeps the contrast boost visible without wiping
-      // out everything darker than a normally-exposed photo.
-      float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      vec3 shadowLift = c * mix(uShadows, 1.0, smoothstep(0.0, uPivot, lum));
-      vec3 highlightRolloff = mix(shadowLift, shadowLift * uHighlights, smoothstep(uPivot, 1.0, lum));
-      return (highlightRolloff - uPivot) * uContrast + uPivot;
-    }
+    // Standard 2D-tiled 3D LUT sample (LUT_SIZE must be a perfect
+    // square - baked assumption shared with bakeLUT() above): 2
+    // texture2D samples (adjacent z-slices) + 1 mix, replacing what
+    // used to be a 4-tap blur + full RGB<->HSV round trip per pixel.
+    vec3 sampleLut3D(vec3 c){
+      float lutSize = uLutSize;
+      float sliceGrid = sqrt(lutSize);
+      float sliceSize = 1.0/sliceGrid;
+      float slicePixelSize = sliceSize/lutSize;
+      float sliceInnerSize = slicePixelSize*(lutSize-1.0);
 
-    // ---- HSV helpers for the color-mixer split below ----
-    vec3 rgb2hsv(vec3 c){
-      vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
-      vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
-      vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
-      float d = q.x - min(q.w, q.y);
-      float e = 1.0e-10;
-      return vec3(abs(q.z + (q.w - q.y) / (6.0*d + e)), d / (q.x + e), q.x);
-    }
-    vec3 hsv2rgb(vec3 c){
-      vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
-      vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-      return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
-    }
+      float zSlice0 = floor(c.b*(lutSize-1.0));
+      float zSlice1 = min(zSlice0+1.0, lutSize-1.0);
+      float zFrac = fract(c.b*(lutSize-1.0));
 
-    // Color-mixer split: red/orange/yellow (hue ~0.0-0.17) gets a
-    // saturation boost and a slight push toward orange (the "gold"
-    // look); green/aqua/blue/purple (hue ~0.25-0.83) gets its
-    // saturation pulled toward uCoolKill (0 = fully desaturated,
-    // deleting background color noise so only the warm channel
-    // reads as color). Smooth hue-band weights instead of a hard
-    // cutoff so the transition doesn't band across a gradient sky.
-    vec3 selectiveMix(vec3 c){
-      vec3 hsv = rgb2hsv(c);
-      float warmWeight = 1.0 - smoothstep(0.10, 0.20, min(hsv.x, 1.0 - hsv.x));
-      float coolWeight = smoothstep(0.16, 0.30, hsv.x) * (1.0 - smoothstep(0.80, 0.92, hsv.x));
+      vec2 xy = vec2(slicePixelSize*0.5 + c.r*sliceInnerSize, slicePixelSize*0.5 + c.g*sliceInnerSize);
 
-      float sat = hsv.y;
-      sat = mix(sat, sat * uWarmBoost, warmWeight);
-      sat = mix(sat, sat * uCoolKill, coolWeight);
+      vec2 tile0 = vec2(mod(zSlice0, sliceGrid), floor(zSlice0/sliceGrid)) * sliceSize;
+      vec2 tile1 = vec2(mod(zSlice1, sliceGrid), floor(zSlice1/sliceGrid)) * sliceSize;
 
-      float hue = hsv.x + uWarmHueShift * warmWeight * 0.08;
-
-      return hsv2rgb(vec3(hue, clamp(sat, 0.0, 1.0), hsv.z));
+      vec3 c0 = texture2D(tLut, tile0+xy).rgb;
+      vec3 c1 = texture2D(tLut, tile1+xy).rgb;
+      return mix(c0, c1, zFrac);
     }
 
     void main(){
-      vec2 texel = 1.0 / uResolution;
       vec4 src = texture2D(tDiffuse, vUv);
+      vec3 graded = sampleLut3D(clamp(src.rgb, 0.0, 1.0));
 
-      // clarity: cheap local-contrast boost via a 4-tap blur used
-      // as an unsharp mask - deliberately not a full separable
-      // gaussian, this only has to read "a bit grittier", not be a
-      // reference-quality sharpen.
-      vec3 blur = (
-        texture2D(tDiffuse, vUv + vec2( texel.x,  0.0)).rgb +
-        texture2D(tDiffuse, vUv + vec2(-texel.x,  0.0)).rgb +
-        texture2D(tDiffuse, vUv + vec2( 0.0,  texel.y)).rgb +
-        texture2D(tDiffuse, vUv + vec2( 0.0, -texel.y)).rgb
-      ) * 0.25;
-      vec3 sharpened = src.rgb + (src.rgb - blur) * uClarity;
-
-      vec3 graded = gradeCurve(sharpened);
-      graded = selectiveMix(graded);
-
-      // vignette: radial falloff from screen center, darkens the
-      // edges to pull focus toward the center of frame.
       vec2 centered = vUv - 0.5;
       float vig = 1.0 - dot(centered, centered) * uVignette;
       graded *= vig;
@@ -192,11 +206,6 @@ const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), gradeMaterial);
 quad.frustumCulled = false;
 quadScene.add(quad);
 
-// Defensive: if this shader ever fails to compile/link (typo, driver
-// quirk, whatever), silently falling back to the plain render is far
-// better than the whole game going black with zero on-screen signal.
-// One-time warm-up render + program status check, done off the main
-// render path so it can't itself throw into the game loop.
 let gradeCompileFailed = false;
 try{
   renderer.compile(quadScene, quadCamera);
@@ -217,17 +226,11 @@ function setColorGradeEnabled(value){
   enabled = !!value;
 }
 
-/* Called from main.js's debounced resize handler (line ~3625) and
-   from applyResolution() indirectly via settingsResScale - the
-   render target has to track the same backbuffer size the main
-   renderer uses, or the grade pass would sample a stretched/
-   letterboxed frame. */
 function resizeColorGrade(){
   renderer.getDrawingBufferSize(_bufSize);
   const w = Math.max(1, Math.floor(_bufSize.x));
   const h = Math.max(1, Math.floor(_bufSize.y));
   rt.setSize(w, h);
-  gradeMaterial.uniforms.uResolution.value.set(w, h);
 }
 resizeColorGrade();
 
@@ -245,9 +248,6 @@ function renderWithColorGrade(){
     gradeMaterial.uniforms.tDiffuse.value = rt.texture;
     renderer.render(quadScene, quadCamera);
   }catch(err){
-    // Never let a grading-pass failure blank the game - log it once
-    // and permanently fall back to the plain render for the rest of
-    // the session rather than retrying (and re-throwing) every frame.
     console.error('[colorGrade] render pass threw, disabling grade pass for this session:', err);
     gradeCompileFailed = true;
     renderer.setRenderTarget(null);
