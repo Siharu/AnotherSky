@@ -406,14 +406,17 @@ $('begin-btn').addEventListener('click', ()=>{
       setTitleScreenActive(false);
       clock.getDelta();
       // now that state.yaw reflects the real look direction, put the radio
-      // a few meters behind the player (opposite the initial look
-      // direction, with a little spread so it's not dead-center) instead
-      // of wherever the parse-time placeholder angle happened to land -
-      // player wakes up facing away from it and has to turn to find it,
-      // rather than it being the first thing in view.
+      // a couple meters in front of the player. Used to place it BEHIND
+      // the player instead (opposite the look direction) so they'd have
+      // to turn around and find it - but the hallway spawn sits right
+      // next to the locked wake-up-room door, and "a few meters behind"
+      // routinely landed the offset point back through that door and
+      // inside the sealed room itself (unreachable). In front keeps it
+      // clear of the door and guarantees it's on open hallway floor,
+      // the first thing the player sees on waking.
       if(getRadioPickupMesh()){
-        const ang = state.yaw + Math.PI + (Math.random()*0.5 - 0.25);
-        const dist = 3.2 + Math.random()*1.2;
+        const ang = state.yaw + (Math.random()*0.5 - 0.25);
+        const dist = 1.6 + Math.random()*0.6;
         _RADIO_PICKUP_POS.x = state.playerX - Math.sin(ang)*dist;
         _RADIO_PICKUP_POS.z = state.playerZ - Math.cos(ang)*dist;
         const ry = groundHeightAt(_RADIO_PICKUP_POS.x, _RADIO_PICKUP_POS.z) + _RADIO_FLOAT_HEIGHT;
