@@ -700,7 +700,11 @@ function buildSafehouse(){
     const lamp = new THREE.PointLight(0xffaa66, 1.8, 14, 0);
     lamp.position.y = -0.65;
     safehouseLampPivot.add(lamp);
-    const glow = addGlow(group, 0xffb877, 1.6, 0.7);
+    // Bloom sprite only - the actual PointLight above stays as-is (it's
+    // the hallway's main light source; dimming it would dim the whole
+    // room, not just the fixture). This is just how blown-out the bulb
+    // itself looks up close, toned down so it doesn't glare.
+    const glow = addGlow(group, 0xffb877, 1.3, 0.4);
     glow.position.set(safehouseLampPivot.position.x, safehouseLampPivot.position.y-0.65, safehouseLampPivot.position.z);
 
     const vestLight = new THREE.PointLight(0xc9c2b0, 0.5, 10, 0);
