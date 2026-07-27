@@ -47,6 +47,7 @@ import {
   relayConnectLines, relayConnectFinalLine,
   hqApproachBlockedLines, hqApproachUnlockedLine,
   tvWhoAreYouLine, tvWhoAreYouPlayerLine, tvStickyNoteHQLine,
+  glitchDoorFirstLine, glitchDoorSealedLine, glitchDoorUnlockLine,
   swarmDeathLines, holoMapUnlockLine
 } from './data/dialogue.js';
 import { startGlitchScramble, stopGlitchScramble } from './ui/credits.js';
@@ -125,7 +126,7 @@ import {
   buildSafehouse, buildSafehouseExterior,
   updateDoorFlash, updateSafehouseInterior,
   NOTEBOOK_POS, LOCKED_DOOR_POS, BED_TABLE_POS, SAFEHOUSE_DOOR_YAW,
-  CALENDAR_POS, STORAGE_DRAWER_POS, CALENDAR_LAST_DAY, TV_POS,
+  CALENDAR_POS, STORAGE_DRAWER_POS, CALENDAR_LAST_DAY, TV_POS, GLITCH_DOOR_POS,
   SAFEHOUSE_CENTER, SAFEHOUSE_HALF_W, SAFEHOUSE_HALF_D,
 } from './world/safehouse.js';
 import { updateDoorTransitions } from './systems/doors.js';
@@ -2506,6 +2507,7 @@ function tryInteract(){
   if(state.nearCalendar){ checkCalendar(); return; }
   if(state.nearStorageDrawer){ checkStorageDrawer(); return; }
   if(state.nearTV){ checkTV(); return; }
+  if(state.nearGlitchDoor && state.glitchDoorRevealed){ checkGlitchDoor(); return; }
   if(state.nearDeadRelayId>=0){ connectDeadRelay(state.nearDeadRelayId); return; }
   if(state.nearOrbId<0) return;
   const orbData = orbMeshes.find(o=>o.id===state.nearOrbId);
@@ -2760,6 +2762,35 @@ function checkTV(){
     return;
   }
   showLineBox(tvStickyNoteLine, { hold:4200 });
+}
+
+// Glitch door (radio room). Deliberately no separate collectible gate -
+// state.glitchDoorUnlocked flips itself in updateSafehouseInterior the
+// moment state.hqTowerUnlocked does (see world/safehouse.js). This
+// function only decides which of three lines to show: first sighting,
+// a repeat while still sealed, or the one-shot unlock beat.
+let glitchDoorUnlockLineShown = false;
+let glitchDoorFirstSeen = false;
+function checkGlitchDoor(){
+  if(state.glitchDoorUnlocked && !glitchDoorUnlockLineShown){
+    glitchDoorUnlockLineShown = true;
+    showLineBox(glitchDoorUnlockLine, { hold:3400 });
+    writeSave('checkpoint');
+    return;
+  }
+  if(state.glitchDoorUnlocked){
+    // door's stable now - stepping through it is Map 2's entrypoint,
+    // not wired here; leave the line as an idle re-inspect for now.
+    showLineBox(glitchDoorUnlockLine, { hold:2400 });
+    return;
+  }
+  if(!glitchDoorFirstSeen){
+    glitchDoorFirstSeen = true;
+    showLineBox(glitchDoorFirstLine, { hold:3600 });
+    writeSave('checkpoint');
+    return;
+  }
+  showLineBox(glitchDoorSealedLine, { hold:2600 });
 }
 
 // Relay tower connection quest. Each of the 8 dead towers (built in the
@@ -3916,6 +3947,15 @@ function updateOrbs(dt){
   state.nearTV = facingTarget(TV_POS.x, TV_POS.z, 1.8);
   if(state.nearTV){
     interactPrompt.textContent = ('ontouchstart' in window) ? 'touch to look at the tv' : '[E] look at the tv';
+    interactPrompt.classList.add('show');
+    interactBtn.classList.add('active');
+    state.nearOrbId = -1;
+    return;
+  }
+  if(state.nearGlitchDoor && state.glitchDoorRevealed){
+    interactPrompt.textContent = ('ontouchstart' in window)
+      ? (state.glitchDoorUnlocked ? 'touch to open the door' : 'touch to inspect the wall')
+      : (state.glitchDoorUnlocked ? '[E] open the door' : '[E] inspect the wall');
     interactPrompt.classList.add('show');
     interactBtn.classList.add('active');
     state.nearOrbId = -1;
