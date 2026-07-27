@@ -173,6 +173,31 @@ if(DEBUG_MODE){
 }
 let fpsFrames = 0, fpsAccum = 0;
 
+// Ground wireframe toggle (debug-only, same gate as the FPS counter
+// above). Not a permanent feature - this exists purely so the mesh's
+// actual shape (the terrainHeight() sine-wave deformation baked into
+// groundGeo, same formula grass.js's shader ports into GLSL) is easy to
+// read at a glance, the way the reference grass article's demo screenshot
+// showed its landscape mesh in wireframe while dialing in blade
+// placement. Toggle with 'G' while DEBUG_MODE is on; does nothing
+// otherwise, so it never surfaces to a normal playthrough. Hooked up
+// right after `ground`/`groundMat` are built further down (see
+// initGroundWireframeToggle()) since this early in the file the mesh
+// doesn't exist yet.
+let groundWireframeOn = false;
+function initGroundWireframeToggle(){
+  if(!DEBUG_MODE) return;
+  window.addEventListener('keydown', e=>{
+    if(e.code !== 'KeyG') return;
+    groundWireframeOn = !groundWireframeOn;
+    groundMat.wireframe = groundWireframeOn;
+    // the far skirt plane is flat/unlit already - toggling it too would
+    // just be a giant featureless grid, so only the detailed patch
+    // (where the actual terrain shape lives) reflects the toggle
+    console.log(`ground wireframe: ${groundWireframeOn ? 'on' : 'off'}`);
+  });
+}
+
 /* ---------- LORE DATA ----------
    Moved to src/data/lore.js (Wave 1) and imported at true module top
    level above - this was a leftover byte-identical duplicate of that
@@ -342,6 +367,7 @@ const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.position.y = 0;
 ground.receiveShadow = true;
 scene.add(ground);
+initGroundWireframeToggle(); // debug-only 'G' toggle - see its definition above for why
 
 // far skirt: a second, larger dark plane beyond the detailed ground so the
 // WORLD_RADIUS boundary never shows as a visible edge — it just fogs out.
@@ -1692,6 +1718,8 @@ let radioTowerBeaconMesh, radioTowerHeight, radioTowerBeaconLight, radioTowerPul
    almost out rather than a live signal. */
 const DEAD_RELAY_COUNT = 8;
 const deadRelayFlickerLights = []; // { mesh, light, glow, phase, flickers }
+const deadRelayCables = {}; // id -> { tube, mat, glow, pulsePhase } - see buildRelayCableNetwork()
+let hqTrunkCable = null; // { tube, mat, glow } - the final buried line from Relay Seven to HQ
 // dangling wire prop (session addition): a few sagging cable strands
 // hanging off the lattice - chained short cylinder segments drooping at
 // an increasing angle, cheap stand-in for a real catenary curve. Purely
@@ -1922,6 +1950,87 @@ let hqBeaconMesh, hqBeaconLight, hqTowerHeight;
   group.position.set(hx, hy, hz);
   scene.add(group);
 }
+
+/* ---------- RELAY CABLE NETWORK ----------
+   Ties Relay Seven (0,0) to all 8 dead relays with a half-buried cable
+   each, plus one thick trunk line from Relay Seven out to the HQ tower.
+   Purely presentational - state.relayTowersConnected/hqTowerUnlocked
+   already own the actual progression; this just gives the connect-relays
+   quest a visible spine so "connect all 8" reads as one network
+   converging on one destination instead of 8 unrelated pickups.
+
+   "Half-buried": the tube sits just under the terrain height for most
+   of its run (groundHeightAt(midpoint) - 0.12) with short exposed studs
+   poking up above ground every few segments, like a buried line that's
+   worked its way loose in patches - cheaper and more convincing than
+   trying to actually cut a trench into the ground mesh. */
+function buildBuriedCable(x1, z1, x2, z2, { studs = true, radius = 0.05, segments = 14 } = {}){
+  const pts = [];
+  for(let i=0;i<=segments;i++){
+    const t = i/segments;
+    const x = x1 + (x2-x1)*t, z = z1 + (z2-z1)*t;
+    const y = groundHeightAt(x, z) - 0.1;
+    pts.push(new THREE.Vector3(x, y, z));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const cableMat = new THREE.MeshToonMaterial({ color:0x1c1a16, gradientMap:toonRamp, emissive:0x000000 });
+  patchFogToDistance(cableMat);
+  const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, segments*2, radius, 6, false), cableMat);
+  const group = new THREE.Group();
+  group.add(tube);
+  if(studs){
+    // exposed segments where the cable's worked loose - purely cosmetic,
+    // no collision, just visual noise so the line doesn't look freshly
+    // laid
+    for(let i=2;i<segments-1;i+=3){
+      const t = i/segments;
+      const x = x1 + (x2-x1)*t, z = z1 + (z2-z1)*t;
+      const y = groundHeightAt(x, z);
+      const stud = new THREE.Mesh(new THREE.CylinderGeometry(radius*1.3, radius*1.3, 0.14, 6), cableMat);
+      stud.position.set(x, y+0.03, z);
+      group.add(stud);
+    }
+  }
+  scene.add(group);
+  const glow = addGlow(group, 0xcf8a2e, 1.6, 0.0); // 0 opacity at rest - see setCableActive()
+  return { tube, mat: cableMat, glow, group };
+}
+
+function buildRelayCableNetwork(){
+  for(const t of state.deadRelayTowers){
+    deadRelayCables[t.id] = buildBuriedCable(RADIO_TOWER_POS.x, RADIO_TOWER_POS.z, t.x, t.z);
+  }
+  hqTrunkCable = buildBuriedCable(RADIO_TOWER_POS.x, RADIO_TOWER_POS.z, HQ_TOWER_POS.x, HQ_TOWER_POS.z, { radius: 0.11, segments: 24 });
+}
+buildRelayCableNetwork();
+
+// Pulses whichever cables are "live" - same breathing rhythm as the
+// beacons they lead to, so the network reads as one continuously-fed
+// system rather than a static prop once it lights up.
+function updateRelayCablePulse(){
+  const pulse = 0.5 + Math.sin(performance.now()*0.0022)*0.5;
+  for(const id of state.relayTowersConnected){
+    const cable = deadRelayCables[id];
+    if(!cable) continue;
+    cable.mat.emissive.setHex(0xff3b3b);
+    cable.mat.emissiveIntensity = 0.4 + pulse*0.6;
+    if(cable.glow) cable.glow.material.opacity = 0.15 + pulse*0.2;
+  }
+  if(hqTrunkCable){
+    if(state.hqTowerUnlocked){
+      hqTrunkCable.mat.emissive.setHex(0xff3b3b);
+      hqTrunkCable.mat.emissiveIntensity = 0.5 + pulse*0.7;
+      if(hqTrunkCable.glow) hqTrunkCable.glow.material.opacity = 0.2 + pulse*0.25;
+    } else if(state.relayTowersConnected.size > 0){
+      // trunk stirs faintly once at least one relay feeds it, well
+      // before the network's actually complete - a hint the line goes
+      // somewhere before the player's confirmed where
+      const partial = state.relayTowersConnected.size / (state.deadRelayTowers.length||8);
+      hqTrunkCable.mat.emissive.setHex(0xcf8a2e);
+      hqTrunkCable.mat.emissiveIntensity = partial * 0.25 * (0.5+pulse*0.5);
+    }
+  }
+}
 function updateHQTowerBeacon(){
   if(!hqBeaconMesh) return;
   // Slower, heavier pulse than Relay Seven's - reads as something much
@@ -1969,6 +2078,7 @@ export function updateRadioTower(dt){
   updateRadioTowerBeacon();
   updateDeadRelayFlickers(dt);
   updateConnectedRelayBeacons();
+  updateRelayCablePulse();
   updateHQTowerBarrier(dt);
   if(state.minimapUnlocked) return;
   const d = Math.hypot(state.playerX - RADIO_TOWER_POS.x, state.playerZ - RADIO_TOWER_POS.z);
