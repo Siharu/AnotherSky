@@ -87,6 +87,18 @@ const LOCKED_DOOR_POS = {
   x: SAFEHOUSE_CENTER.x + (COL_W - SAFEHOUSE_WALL_T/2 - 0.02),
   z: SAFEHOUSE_CENTER.z + WAKE_DOOR_Z,
 };
+export const HALLWAY_SPAWN_POS = {
+  // Just inside the hallway, east of the wake-up room's (locked) door -
+  // NOT inside the wake-up room itself. The wake-up room is sealed/
+  // quest-gated (see LOCKED_DOOR_POS above), so spawning inside it read
+  // as "trapped in a room I can't leave"; the hallway is the actual hub
+  // and is always open. Same z as the locked door (WAKE_DOOR_Z) so the
+  // player starts facing straight at it, offset east into open hallway
+  // floor clear of both the door swing and the hallway's own walls
+  // (hallway spans COL_W..COL_E).
+  x: SAFEHOUSE_CENTER.x + (COL_W + 1.0),
+  z: SAFEHOUSE_CENTER.z + WAKE_DOOR_Z,
+};
 const BED_TABLE_POS = {
   // beside the cot's headboard, wake-up room
   x: SAFEHOUSE_CENTER.x + (-SAFEHOUSE_HALF_W + 2.6),
@@ -1219,5 +1231,5 @@ export {
   updateDoorFlash, updateSafehouseInterior,
   NOTEBOOK_POS, LOCKED_DOOR_POS, BED_TABLE_POS, SAFEHOUSE_DOOR_YAW,
   CALENDAR_POS, STORAGE_DRAWER_POS, CALENDAR_LAST_DAY, TV_POS, TV_YAW,
-  GLITCH_DOOR_POS, EXTERIOR_CENTER,
+  GLITCH_DOOR_POS, EXTERIOR_CENTER, HALLWAY_SPAWN_POS,
 };
