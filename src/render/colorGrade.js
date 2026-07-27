@@ -226,10 +226,20 @@ function setColorGradeEnabled(value){
   enabled = !!value;
 }
 
+// The grade pass's cost scales with how many pixels it has to shade
+// (render into rt, then sample+mix+vignette on the composite quad), not
+// with scene complexity - so rendering that offscreen pass at a lower
+// resolution and letting LinearFilter upscale it on the composite quad
+// cuts the actual fill-rate cost directly. 0.65 keeps the duotone/
+// vignette look visually identical (it's already a soft, low-frequency
+// grade, not fine detail) while dropping to well under half the pixel
+// count of the native buffer.
+const GRADE_RES_SCALE = 0.65;
+
 function resizeColorGrade(){
   renderer.getDrawingBufferSize(_bufSize);
-  const w = Math.max(1, Math.floor(_bufSize.x));
-  const h = Math.max(1, Math.floor(_bufSize.y));
+  const w = Math.max(1, Math.floor(_bufSize.x * GRADE_RES_SCALE));
+  const h = Math.max(1, Math.floor(_bufSize.y * GRADE_RES_SCALE));
   rt.setSize(w, h);
 }
 resizeColorGrade();
